@@ -8,6 +8,11 @@ Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb
 # bluetooth warnings, start-up status lines) land on /dev/console under the
 # menus and push them off the screen. systemd-mute-console notifies READY=1
 # once muted, and on SIGINT/SIGTERM restores both outputs.
+# systemd-sysinstall's own --mute-console=yes instance calls SetShowStatus("")
+# when it exits, resetting PID 1 status output to the kernel-cmdline default,
+# not back to muted. bluefin-installer-done's screen stays clean only because
+# elements/oci/bluefin-server-boot.bst sets systemd.show_status=error; keep
+# that cmdline setting (or re-mute here) if it ever changes.
 DefaultDependencies=no
 Before=shutdown.target
 Conflicts=shutdown.target

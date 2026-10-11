@@ -32,6 +32,7 @@ CREDS_ELEMENT = ROOT / "elements" / "bluefin-server" / "os-creds-prov.bst"
 DISK = UNITS / "bluefin-installer-disk.service"
 DONE = UNITS / "bluefin-installer-done.service"
 PROMPT = UNITS / "bluefin-root-password-prompt.service"
+HOMELAB = UNITS / "bluefin-homelab-install.service"
 HELPERS = ("bluefin-installer-disk", "bluefin-installer-done", "bluefin-root-password-prompt")
 
 
@@ -141,7 +142,7 @@ def test_no_helper_ships_a_password():
         assert "plaintext-password.root=" not in text, name
 
 def test_interactive_prompts_mute_console():
-    for path in (DISK, DONE):
+    for path in (DISK, DONE, HOMELAB):
         unit = SystemdFile(path)
         assert "bluefin-installer-mute-console.service" in unit.words("Unit", "Wants"), path.name
         assert "bluefin-installer-mute-console.service" in unit.words("Unit", "After"), path.name
