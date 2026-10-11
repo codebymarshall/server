@@ -38,10 +38,10 @@ def test_a_failed_install_leaves_the_machine_up():
     assert SystemdFile(DROPIN).value("Unit", "FailureAction") == "none"
 
 
-def test_kernel_and_service_manager_messages_reach_the_console():
+def test_sysinstall_mutes_console_during_interactive_prompts():
     [argv] = SystemdFile(DROPIN).commands()
     assert argv[0] == "systemd-sysinstall"
-    assert not [word for word in argv if word.startswith("--mute-console")]
+    assert "--mute-console=yes" in argv
 
 
 def test_the_dropin_replaces_upstreams_command(tmp_path):

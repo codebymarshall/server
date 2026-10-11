@@ -8,6 +8,8 @@ Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb
 # installed disk.
 SuccessAction=reboot
 FailureAction=reboot
+Wants=bluefin-installer-mute-console.service
+After=bluefin-installer-mute-console.service
 
 [Service]
 Type=oneshot

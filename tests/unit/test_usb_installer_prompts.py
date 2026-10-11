@@ -45,6 +45,11 @@ def option(argv: list[str], name: str) -> str | None:
     return None
 
 
+
+def test_sysinstall_mutes_console():
+    assert option(install_argv(), "--mute-console") == "yes"
+
+
 def test_the_disk_is_erased_without_a_keep_or_erase_question():
     # The summary's "yes" stays the one confirmation; --erase=yes only removes
     # the separate keep/erase prompt, which has no safe unattended answer.

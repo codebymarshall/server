@@ -1,0 +1,18 @@
+[Unit]
+Description=Keep boot messages off the installer's prompts (USB installer)
+Documentation=man:systemd-mute-console(1)
+Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb-installer.md
+# Pulled in (Wants=) by the interactive prompts on the monitor (secure-boot,
+# homelab-install, disk, done).
+# Without it, kernel and service-manager messages (firmware load failures,
+# bluetooth warnings, start-up status lines) land on /dev/console under the
+# menus and push them off the screen. systemd-mute-console notifies READY=1
+# once muted, and on SIGINT/SIGTERM restores both outputs.
+DefaultDependencies=no
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/systemd-mute-console
+Restart=on-failure

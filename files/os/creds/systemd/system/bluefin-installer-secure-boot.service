@@ -14,6 +14,8 @@ After=systemd-vconsole-setup.service systemd-firstboot.service
 # sysinstall waits for logind anyway; ordered after it, logind's and D-Bus's
 # start-up messages do not land in the middle of the prompt.
 After=systemd-logind.service
+Wants=bluefin-installer-mute-console.service
+After=bluefin-installer-mute-console.service
 Before=systemd-sysinstall.service bluefin-homelab-install.service
 
 [Service]

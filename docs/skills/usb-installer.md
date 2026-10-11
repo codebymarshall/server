@@ -63,7 +63,7 @@ UKI's `systemd.setenv=`), `--erase=yes`, and `--reboot=no` with
 restarts the machine: its `SuccessAction=reboot` and `FailureAction=reboot`),
 plus `RemainAfterExit=no` so that still fires once
 upstream's unit is `Type=oneshot` with `RemainAfterExit=yes` (systemd v262).
-It also sets `FailureAction=none` and leaves out upstream's
+It also sets `FailureAction=none` and retains upstream's
 `--mute-console=yes`; what that changes is described after the install steps
 below. The disk UKI sits outside `EFI/Linux` on the stick so systemd-boot
 never offers it there.
@@ -155,10 +155,14 @@ After a cancel or a failed install the machine stays up: the drop-in sets
 `FailureAction=none` where upstream's unit halts. sysinstall's error stays on
 the monitor, and the journal, which lives only in RAM, is kept until you power
 off (`journalctl -u systemd-sysinstall`, for example over SSH with the
-developer-mode credentials below). sysinstall runs without upstream's
-`--mute-console=yes`, so kernel and service-manager messages, such as disk I/O
-errors, reach the monitor too and can land between its prompts; its own output
-is shown either way. A failure after sysinstall has erased the disk leaves it
+developer-mode credentials below). sysinstall runs with upstream's
+`--mute-console=yes`, and each interactive prompt pulls in
+`bluefin-installer-mute-console.service`. Combined with `quiet loglevel=4 systemd.show_status=error`
+on the installer command line, kernel and service-manager noise (such as Bluetooth,
+Wi-Fi or firmware load errors) stays off the monitor throughout the install flow.
+On failure, sysinstall's own error text remains on screen, kept visible by
+`FailureAction=none`; full kernel and service diagnostics remain available in
+the RAM journal (`journalctl -b -k` and `journalctl -u systemd-sysinstall`). A failure after sysinstall has erased the disk leaves it
 blank ([#308](https://github.com/projectbluefin/server/issues/308)).
 Power-cycle and boot the stick again to retry.
 
@@ -449,7 +453,10 @@ graphics output, or the firmware's "restore factory keys").
 
 `bluefin-installer-secure-boot.service` runs before `systemd-sysinstall`
 and before the Homelab entries' prompt; both `Requires=` it, so when it
-fails neither starts and no disk is touched. It reads `SecureBoot`,
+fails neither starts and no disk is touched. It pulls in
+`bluefin-installer-mute-console.service` (`systemd-mute-console(1)`) so
+kernel and service-manager log messages do not land over its menus and push
+them off the screen. It reads `SecureBoot`,
 `SetupMode` and `AuditMode` from efivarfs and decides that Secure Boot is
 on **with our keys** when the firmware's `db` variable holds, byte for byte,
 an X.509 certificate from the stick's `loader/keys/auto/db.auth`:

@@ -81,3 +81,14 @@ def test_the_stick_carries_what_the_enrollment_choice_relies_on():
     script = SCRIPT.read_text(encoding="utf-8")
     assert "ENROLL_ENTRY=secure-boot-keys-auto" in script
     assert ':-/run/bluefin/installer/loader/keys/auto}' in script
+
+
+def test_the_check_mutes_noisy_console_messages():
+    unit = SystemdFile(UNIT)
+    assert "bluefin-installer-mute-console.service" in unit.words("Unit", "Wants")
+    assert "bluefin-installer-mute-console.service" in unit.words("Unit", "After")
+    mute = SystemdFile(UNITS / "bluefin-installer-mute-console.service")
+    assert mute.value("Service", "Type") == "notify"
+    assert mute.value("Service", "ExecStart") == "/usr/bin/systemd-mute-console"
+    assert "shutdown.target" in mute.words("Unit", "Conflicts")
+    assert "shutdown.target" in mute.words("Unit", "Before")
