@@ -35,7 +35,9 @@
 # defaults to "default", as in Zincati. Without a URL both verbs do nothing
 # and exit 0, so single hosts and Kubernetes nodes (kured) are unaffected.
 # The URL may carry credentials (https://user:password@host/); messages show
-# it without them.
+# it without them, and the URL reaches curl through a config on stdin (-K -),
+# never on its command line, which /proc/<pid>/cmdline shows to every local
+# user. Credentials on a plain http:// URL travel in clear; that is logged.
 #
 # The client id is the machine ID hashed with this tool's application key
 # (systemd-id128 machine-id --app-specific=): stable across reboots and
@@ -99,6 +101,9 @@ if [[ ! "${url}" =~ ^https?://[^[:space:]]+$ ]]; then
   exit 1
 fi
 while [ "${url%/}" != "${url}" ]; do url="${url%/}" log_url="${log_url%/}"; done
+if [ "${authority##*@}" != "${authority}" ] && [ "${url%%://*}" = http ]; then
+  warn "FleetLock URL ${log_url} carries credentials over plain http; they are sent in clear"
+fi
 if [[ ! "${group}" =~ ^[a-zA-Z0-9.-]+$ ]]; then
   err "FleetLock group ${group} must match [a-zA-Z0-9.-]+; ${fail}"
   exit 1
@@ -111,10 +116,16 @@ fi
 body="{\"client_params\":{\"id\":\"${id}\",\"group\":\"${group}\"}}"
 who="id ${id}, group ${group}"
 # No --location: the protocol header guards against redirected requests.
+# The URL (credentials and all) goes in through a config on stdin, so the
+# command line holds nothing secret. curl's config quoting: backslash and
+# double quote escaped inside a double-quoted value.
+request="${url}/v1/${endpoint}"
+config_url="${request//\\/\\\\}"; config_url="${config_url//\"/\\\"}"
 rc=0
-reply="$(curl -sS --proto '=http,https' --retry 2 --connect-timeout 10 --max-time 30 \
+reply="$(printf 'url = "%s"\n' "${config_url}" | \
+  curl -sS -K - --proto '=http,https' --retry 2 --connect-timeout 10 --max-time 30 \
     -H 'fleet-lock-protocol: true' -H 'Content-Type: application/json' \
-    --data-binary "${body}" -w '\n%{http_code}' "${url}/v1/${endpoint}")" || rc=$?
+    --data-binary "${body}" -w '\n%{http_code}')" || rc=$?
 if [ "${rc}" -ne 0 ]; then
   # No HTTP answer at all, which is not a refusal (exit 3); what happens next
   # is the caller's call, so the message does not say.
