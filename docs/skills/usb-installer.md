@@ -151,20 +151,33 @@ is rejected with `Invalid input …` and the same prompt asked again, so a
 mistyped answer never ends the install. A cancelled disk question fails its
 unit, so sysinstall never starts and no disk is touched.
 
-After a cancel or a failed install the machine stays up: the drop-in sets
-`FailureAction=none` where upstream's unit halts. sysinstall's error stays on
-the monitor, and the journal, which lives only in RAM, is kept until you power
-off (`journalctl -u systemd-sysinstall`, for example over SSH with the
-developer-mode credentials below). sysinstall runs with upstream's
-`--mute-console=yes`, and each interactive prompt pulls in
-`bluefin-installer-mute-console.service`. Combined with `quiet loglevel=4 systemd.show_status=error`
-on the installer command line, kernel and service-manager noise (such as Bluetooth,
-Wi-Fi or firmware load errors) stays off the monitor throughout the install flow.
-On failure, sysinstall's own error text remains on screen, kept visible by
-`FailureAction=none`; full kernel and service diagnostics remain available in
-the RAM journal (`journalctl -b -k` and `journalctl -u systemd-sysinstall`). A failure after sysinstall has erased the disk leaves it
-blank ([#308](https://github.com/projectbluefin/server/issues/308)).
-Power-cycle and boot the stick again to retry.
+After cancellation or failure, `FailureAction=none` keeps the machine up and
+sysinstall's own error on the monitor. The RAM journal survives until power-off:
+`journalctl -b -k` and `journalctl -u systemd-sysinstall` (over SSH with the
+developer-mode credentials below). `--mute-console=yes` and
+`bluefin-installer-mute-console.service`, combined with `quiet loglevel=4
+systemd.show_status=error`, keep new kernel and PID 1 noise off the prompts.
+The Secure Boot warning, disk chooser and Homelab join prompt clear earlier
+output and scrollback before drawing, never on exit, preserving cancellation
+reasons. A failure after erasure leaves the disk blank
+([#308](https://github.com/projectbluefin/server/issues/308)); boot the stick again to retry.
+
+The attended dogfood path checks the actual foreground VT under concurrent
+kernel and journal error logging:
+
+```bash
+DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_NOISE=1 \
+  DOGFOOD_STATE=dist/installer-console just dogfood-installer
+DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_NOISE=1 DOGFOOD_CONSOLE_FAILURE=kernel \
+  DOGFOOD_STATE=dist/installer-failure just dogfood-installer
+```
+
+The first holds disk, summary and done screens under noise, installs and logs in.
+The second selects a missing UKI: real sysinstall fails before confirmation or
+disk writes, with the error visible, service journal retained and machine up.
+State directories are recreated; use disposable paths. Any
+`systemd.unit-dropin.systemd-sysinstall.service` credential makes an install
+unattended and skips the disk question; never use it for attended instrumentation.
 
 The installed disk is identical to one a diskless node installs: stock
 `systemd-sysinstall` with the layout from `files/os/repart.d/` (see
@@ -481,10 +494,7 @@ Unattended installs never ask: see [Unattended installs](#unattended-installs).
 ## See also
 
 - [ddi-installer.md](ddi-installer.md) — boot, install, and update architecture.
-- [ddi-installer-build.md](ddi-installer-build.md) — build and dogfood
-  (`just dogfood-installer`; `DOGFOOD_INSTALL=console` types the install,
-  the root password and a tty1 login on the guest keyboard and checks the
-  screens above).
+- [ddi-installer-build.md](ddi-installer-build.md) — image build and dogfood procedure.
 - [tpm2-credential-sealing.md](tpm2-credential-sealing.md) — first-boot
   credentials and ESP credential files.
 - [secure-boot-keys.md](secure-boot-keys.md) — the keys that sign the stick.

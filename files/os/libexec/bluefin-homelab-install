@@ -55,6 +55,7 @@ if [ "${role}" = node ]; then
   if [ -s "${creds}/bluefin-cluster.passphrase" ]; then
     pass="$(<"${creds}/bluefin-cluster.passphrase")"
   else
+    [ ! -t 1 ] || printf '\033[H\033[2J\033[3J'
     printf '\nBluefin Server: Homelab (node)\n\n'
     printf 'Type the join passphrase that the control plane shows on its console\n'
     printf '(or prints with "bluefin-cluster passphrase"), then press Enter.\n'

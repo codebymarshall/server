@@ -110,6 +110,9 @@ if unattended; then
     exit 0
 fi
 
+# Clear only before drawing: cancellation and installation errors must remain.
+[ ! -t 1 ] || printf '\033[H\033[2J\033[3J'
+
 nodes=() sizes=() models=()
 re_size='"sizeBytes":([0-9]+)'
 while IFS= read -r reply; do
