@@ -162,22 +162,7 @@ output and scrollback before drawing, never on exit, preserving cancellation
 reasons. A failure after erasure leaves the disk blank
 ([#308](https://github.com/projectbluefin/server/issues/308)); boot the stick again to retry.
 
-The attended dogfood path checks the actual foreground VT under concurrent
-kernel and journal error logging:
-
-```bash
-DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_NOISE=1 \
-  DOGFOOD_STATE=dist/installer-console just dogfood-installer
-DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_NOISE=1 DOGFOOD_CONSOLE_FAILURE=kernel \
-  DOGFOOD_STATE=dist/installer-failure just dogfood-installer
-```
-
-The first holds disk, summary and done screens under noise, installs and logs in.
-The second selects a missing UKI: real sysinstall fails before confirmation or
-disk writes, with the error visible, service journal retained and machine up.
-State directories are recreated; use disposable paths. Any
-`systemd.unit-dropin.systemd-sysinstall.service` credential makes an install
-unattended and skips the disk question; never use it for attended instrumentation.
+The `DOGFOOD_CONSOLE_*` runs in [ddi-installer-build.md](ddi-installer-build.md) check this in QEMU.
 
 The installed disk is identical to one a diskless node installs: stock
 `systemd-sysinstall` with the layout from `files/os/repart.d/` (see
