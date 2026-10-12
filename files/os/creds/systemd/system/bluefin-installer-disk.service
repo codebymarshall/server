@@ -11,6 +11,8 @@ Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb
 # install asks nothing more.
 After=bluefin-installer-secure-boot.service bluefin-homelab-install.service
 After=systemd-vconsole-setup.service systemd-firstboot.service
+Wants=bluefin-installer-mute-console.service
+After=bluefin-installer-mute-console.service
 Before=systemd-sysinstall.service
 
 [Service]

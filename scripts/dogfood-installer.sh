@@ -43,6 +43,12 @@
 #      refused and asked again, then a password typed twice; the tty1 login
 #      banner shows the hostname and IP address, a wrong password is refused,
 #      and root logs in at tty1 with the password typed
+#   DOGFOOD_CONSOLE_NOISE=1 adds bounded concurrent kernel/userspace errors
+#   during the disk, summary and done prompts. DOGFOOD_CONSOLE_FAILURE=kernel
+#   instead selects a nonexistent guest disk UKI: the real sysinstall fails
+#   before its summary and any disk write; step 2 proves the error stays
+#   visible and the machine stays up, then retains the logs and disposable
+#   target without trying to boot it.
 #   Every install also checks the "installed" screen, and every first boot
 #   the serial console's login banner (hostname and IP address).
 #   <next> is an image set with a higher version signed by the same key (dev
@@ -86,6 +92,10 @@
 #                              off (firmware without Secure Boot)
 #   DOGFOOD_INSTALL=<mode>     unattended (default: the drop-in credential) or
 #                              console (typed at the monitor, see above)
+#   DOGFOOD_CONSOLE_NOISE=0|1  concurrent error noise (default 0; console only)
+#   DOGFOOD_CONSOLE_FAILURE=.. none (default) or kernel (console only): a wrong
+#                              guest kernel payload path, before any disk write
+#   DOGFOOD_CONSOLE_HOLD=<s>   hold each installer prompt (default 3; 2-8)
 #   DOGFOOD_MEM=<MiB>          guest memory (default 4096)
 #   DOGFOOD_TIMEOUT=<s>        per-boot timeout (default 600; key enrollment: 120)
 set -euo pipefail
@@ -125,10 +135,31 @@ case "${install_mode}" in
         || { echo "ERROR: DOGFOOD_INSTALL=console does not combine with <next>, prior-install or DOGFOOD_SECURE_BOOT=off" >&2; exit 1; } ;;
     *) echo "ERROR: DOGFOOD_INSTALL must be unattended or console, not '${install_mode}'" >&2; exit 1 ;;
 esac
+console_noise="${DOGFOOD_CONSOLE_NOISE:-0}"
+console_failure="${DOGFOOD_CONSOLE_FAILURE:-none}"
+console_hold="${DOGFOOD_CONSOLE_HOLD:-3}"
+case "${console_noise}" in
+    0|1) ;;
+    *) echo "ERROR: DOGFOOD_CONSOLE_NOISE must be 0 or 1" >&2; exit 1 ;;
+esac
+case "${console_failure}" in
+    none|kernel) ;;
+    *) echo "ERROR: DOGFOOD_CONSOLE_FAILURE must be none or kernel" >&2; exit 1 ;;
+esac
+case "${console_hold}" in
+    [2-8]) ;;
+    *) echo "ERROR: DOGFOOD_CONSOLE_HOLD must be 2-8 seconds" >&2; exit 1 ;;
+esac
+[ "${install_mode}" = console ] || { [ "${console_noise}" = 0 ] && [ "${console_failure}" = none ]; } \
+    || { echo "ERROR: console noise/failure requires DOGFOOD_INSTALL=console" >&2; exit 1; }
 steps=4
 [ -z "${next}" ] || steps=6
 [ "${target_kind}" != prior-install ] || steps=6
+[ "${console_failure}" = none ] || steps=2
 state="$(realpath -m "${DOGFOOD_STATE:-dist/dogfood-installer}")"
+# Never recreate proof state inside, or above, the exported source image set.
+[[ "${dir}/" != "${state}/"* ]] \
+    || { echo "ERROR: DOGFOOD_STATE contains the source image set" >&2; exit 1; }
 mem="${DOGFOOD_MEM:-4096}"
 timeout_s="${DOGFOOD_TIMEOUT:-600}"
 target_serial=bluefin-target
@@ -163,8 +194,12 @@ fi
 
 rm -rf "${state}"
 mkdir -p "${state}"
-target="${DOGFOOD_TARGET_DISK:-${state}/target.raw}"
+target="$(realpath -m "${DOGFOOD_TARGET_DISK:-${state}/target.raw}")"
+[[ "${target}" != "${dir}/"* ]] \
+    || { echo "ERROR: DOGFOOD_TARGET_DISK is inside the source image set" >&2; exit 1; }
 [ -b "${target}" ] && { echo "ERROR: ${target} is a block device; use a disk image file" >&2; exit 1; }
+[ "${console_failure}" = none ] || [[ "${target}" == "${state}/"* ]] \
+    || { echo "ERROR: forced failure requires a disposable target inside DOGFOOD_STATE" >&2; exit 1; }
 rm -f "${target}"
 truncate -s 16G "${target}"
 vars="${state}/vars.fd"
@@ -172,6 +207,7 @@ cp "${vars_tmpl}" "${vars}"
 
 fail() {
     echo "FAIL: $* (logs: ${state})" >&2
+    [ -z "${qemu_pid:-}" ] || kill "${qemu_pid}" 2>/dev/null || true
     exit 1
 }
 
@@ -294,12 +330,12 @@ wait_screen() {
     fail "$1: the monitor never showed '$2'"
 }
 
-# wait_prompt <name> <ERE> [<seconds>]: wait until the line with the cursor
-# on the monitor (where it waits for input) matches <ERE>.
+# wait_prompt <name> <ERE> [<seconds>] [console]: wait until the cursor line
+# matches <ERE>; console requires a completed screen+metadata frame.
 wait_prompt() {
     local deadline=$(( $(date +%s) + ${3:-300} ))
     while kill -0 "${qemu_pid}" 2>/dev/null && [ "$(date +%s)" -lt "${deadline}" ]; do
-        awk '/^=== screen /{y=$NF; n=0; line=""; next} {n++; if (n == y + 1) line=$0} END{print line}' \
+        awk -v framed="${4:-}" '/^=== screen /{y=$NF; n=0; line=""; next} /^=== console .* noise=[0-9]+$/{last=line; complete=1; next} {n++; if (n == y + 1) line=$0} END{if (complete) print last; else if (framed != "console") print line}' \
             "${state}/$1.screen.log" 2>/dev/null | grep -aqE -- "$2" && return 0
         sleep 1
     done
@@ -309,7 +345,58 @@ wait_prompt() {
 }
 
 # last_screen <name>: the newest snapshot of the monitor.
-last_screen() { awk '/^=== screen /{buf=""; next} {buf=buf $0 "\n"} END{printf "%s", buf}' "${state}/$1.screen.log"; }
+last_screen() { awk '/^=== screen /{buf=""; next} /^=== console .* noise=[0-9]+$/{last=buf; complete=1; next} {buf=buf $0 "\n"} END{printf "%s", complete ? last : buf}' "${state}/$1.screen.log"; }
+
+# Commit text and metadata together only when a full console trailer arrives.
+last_console_frame() {
+    awk '/^=== screen /{buf=""; next} /^=== console .* noise=[0-9]+$/{last=$0 "\n" buf; complete=1; next} {buf=buf $0 "\n"} END{if (complete) printf "%s", last}' \
+        "${state}/$1.screen.log"
+}
+
+# Hold the actual foreground VT, not a substring retained from an older
+# snapshot, while kernel/userspace errors are emitted concurrently.
+hold_console() {
+    local name="$1" phase="$2" prompt="$3" deadline=$(( $(date +%s) + console_hold ))
+    local frame screen proof tick last_tick="" samples=0 first_noise="" noise="" first_tick=""
+    while [ "$(date +%s)" -lt "${deadline}" ]; do
+        kill -0 "${qemu_pid}" 2>/dev/null || fail "${name}: machine exited at ${phase}"
+        frame="$(last_console_frame "${name}")"
+        proof="${frame%%$'\n'*}"; screen="${frame#*$'\n'}"
+        printf '%s\n' "${screen}" | grep -qE -- "${prompt}" || fail "${name}: ${phase} prompt left the current screen"
+        ! printf '%s\n' "${screen}" | grep -qF 'DOGFOOD-CONSOLE-NOISE' || fail "${name}: injected errors reached the ${phase} screen"
+        if [ "${phase}" = disk ]; then
+            ! printf '%s\n' "${screen}" | grep -qE 'systemd-gpt-auto-generator|No root/usr partition|failed with exit status|Failed to preset' \
+                || fail "${name}: early boot generator/preset errors remain above the disk chooser"
+        fi
+        if [ "${phase}" != failure ]; then
+            printf '%s\n' "${proof}" | grep -qE 'printk=0 mute=active ' \
+                || fail "${name}: console is not muted at ${phase}: ${proof}"
+        fi
+        tick="${proof#=== console }"; tick="${tick%% *}"
+        noise="${proof##* noise=}"
+        if [ "${tick}" != "${last_tick}" ]; then
+            samples=$(( samples + 1 )); last_tick="${tick}"
+            [ -n "${first_tick}" ] || first_tick="${tick}"
+            [ -n "${first_noise}" ] || first_noise="${noise}"
+        fi
+        sleep 0.5
+    done
+    [ "${samples}" -ge 2 ] || fail "${name}: no live console snapshots during ${phase} hold"
+    if [ "${console_noise}" = 1 ]; then
+        [ "${noise}" -gt "${first_noise}" ] || fail "${name}: no concurrent errors during ${phase} hold"
+        sleep 1
+        # The extra grace period must not let errors replace the prompt.
+        frame="$(last_console_frame "${name}")"; screen="${frame#*$'\n'}"
+        printf '%s\n' "${screen}" | grep -qE -- "${prompt}" || fail "${name}: ${phase} prompt left the current screen"
+        ! printf '%s\n' "${screen}" | grep -qF 'DOGFOOD-CONSOLE-NOISE' || fail "${name}: injected errors reached the ${phase} screen"
+        grep -aqF "DOGFOOD-CONSOLE-NOISE kernel ${noise}" "${state}/${name}.ttyS2" \
+            || fail "${name}: kernel errors at ${phase} are missing from the journal mirror"
+        grep -aqF "DOGFOOD-CONSOLE-NOISE userspace ${noise}" "${state}/${name}.ttyS2" \
+            || fail "${name}: userspace errors at ${phase} are missing from the journal mirror"
+    fi
+    printf 'PROBE console-%s=%s..%s noise=%s..%s %s\n' \
+        "${phase}" "${first_tick}" "${last_tick}" "${first_noise}" "${noise}" "${proof#=== console }" | tee -a "${state}/${name}.console-proof.log"
+}
 
 # type_keys <name> <text>: type <text> on the guest's keyboard through the
 # QEMU monitor (sendkey); a newline is Enter.
@@ -332,15 +419,39 @@ PY
 cat > "${state}/screen.sh" <<'SCREEN'
 export LC_ALL=C
 port=/dev/virtio-ports/dogfood.screen last=""
+console=0 failed_probe=0
+[ ! -r "${CREDENTIALS_DIRECTORY}/dogfood.console" ] || console=1
 while :; do
     if [ -w "${port}" ] && [ -r /dev/vcsa ]; then
         # vcsa starts with the screen's rows, columns and the cursor's x, y.
         read -r _ cols _ y < <(od -An -tu1 -N4 /dev/vcsa)
         screen="cursor ${y}
 $(tr '\000-\037\177-\377' '?' < /dev/vcs | fold -w "${cols:-80}" | sed 's/ *$//')"
-        if [ "${screen}" != "${last}" ]; then
+        if [ "${console}" = 1 ] || [ "${screen}" != "${last}" ]; then
             printf '=== screen %s %s\n' "$(cut -d' ' -f1 /proc/uptime)" "${screen}" > "${port}"
             last="${screen}"
+            if [ "${console}" = 1 ]; then
+                read -r printk _ < /proc/sys/kernel/printk
+                mute="$(systemctl show -P ActiveState bluefin-installer-mute-console.service)"
+                noise="$(cat /run/dogfood-console-noise 2>/dev/null || echo 0)"
+                printf '=== console %s printk=%s mute=%s noise=%s\n' \
+                    "$(cut -d' ' -f1 /proc/uptime)" "${printk}" "${mute}" "${noise}" > "${port}"
+                if [ "${failed_probe}" = 0 ] && [ "$(systemctl show -P ActiveState systemd-sysinstall.service)" = failed ]; then
+                    failed_probe=1
+                    {
+                        echo "PROBE failure-result=$(systemctl show -P Result systemd-sysinstall.service) status=$(systemctl show -P ExecMainStatus systemd-sysinstall.service) action=$(systemctl show -P FailureAction systemd-sysinstall.service)"
+                        echo "PROBE failure-done-invocation=$(systemctl show -P InvocationID bluefin-installer-done.service)"
+                        if journalctl -b -u systemd-sysinstall.service --no-pager -o cat | grep -qE 'Main process exited.*status=[1-9]|Failed with result .exit-code.'; then
+                            echo "PROBE failure-journal=retained"
+                        fi
+                        journalctl -b -u systemd-sysinstall.service --no-pager -o cat | sed 's/^/PROBE-LOG failure-journal /'
+                        target="$(sed -n 's/^BLUEFIN_INSTALL_TARGET=//p' /run/bluefin-installer-disk/sysinstall.env)"
+                        udevadm settle -t 10 || true
+                        echo "PROBE failure-parts=$(lsblk -rno TYPE "${target}" | grep -cx part) decoy-parts=$(lsblk -rno TYPE /dev/disk/by-id/virtio-bluefin-decoy | grep -cx part)"
+                        sed 's/^/PROBE-LOG failure-disk-choice /' /run/bluefin-installer-disk/sysinstall.env
+                    } > /dev/ttyS1 2>&1
+                fi
+            fi
         fi
     fi
     sleep 0.5
@@ -354,6 +465,7 @@ Conflicts=shutdown.target
 Before=shutdown.target
 [Service]
 ImportCredential=dogfood.screen
+ImportCredential=dogfood.console
 ExecStart=/bin/bash ${CREDENTIALS_DIRECTORY}/dogfood.screen
 UNIT
 printf '[Unit]\nWants=dogfood-screen.service\n' > "${state}/screen-wants.conf"
@@ -412,6 +524,42 @@ for kv in firstboot.locale=C.UTF-8 firstboot.keymap=us firstboot.timezone=UTC 'p
     install_creds+=(-smbios "$(cred "${kv%%=*}" "${state}/${kv%%=*}")")
 done
 install_creds+=("${screen_creds[@]}")
+if [ "${install_mode}" = console ]; then
+    printf 1 > "${state}/console"
+    install_creds+=(-smbios "$(cred dogfood.console "${state}/console")")
+fi
+if [ "${console_noise}" = 1 ]; then
+    cat > "${state}/noise.sh" <<'NOISE'
+# Bounded even if the host stops answering; preserve errors in the journal,
+# never write directly to the tty that the installer is trying to protect.
+for (( n=1; n<=2400; n++ )); do
+    printf '<3>DOGFOOD-CONSOLE-NOISE kernel %s\n' "${n}" > /dev/kmsg
+    printf 'DOGFOOD-CONSOLE-NOISE userspace %s\n' "${n}" | systemd-cat -t dogfood-console-noise -p err
+    printf '%s\n' "${n}" > /run/dogfood-console-noise.next
+    mv /run/dogfood-console-noise.next /run/dogfood-console-noise
+    sleep 0.5
+done
+NOISE
+    cat > "${state}/noise.service" <<'UNIT'
+[Unit]
+Description=Dogfood bounded concurrent console error noise
+DefaultDependencies=no
+After=systemd-journald.service
+Before=shutdown.target
+Conflicts=shutdown.target
+[Service]
+ImportCredential=dogfood.noise
+ExecStart=/bin/bash ${CREDENTIALS_DIRECTORY}/dogfood.noise
+RuntimeMaxSec=20min
+UNIT
+    printf '[Unit]\nWants=dogfood-console-noise.service\n' > "${state}/noise-wants.conf"
+    install_creds+=(
+        -smbios "$(cred dogfood.noise "${state}/noise.sh")"
+        -smbios "$(cred systemd.extra-unit.dogfood-console-noise.service "${state}/noise.service")"
+        -smbios "$(cred systemd.unit-dropin.sysinit.target~dogfood-noise "${state}/noise-wants.conf")"
+        -smbios "$(cred systemd.unit-dropin.system-install.target~dogfood-noise "${state}/noise-wants.conf")"
+    )
+fi
 if [ "${install_mode}" = unattended ] && [ "${DOGFOOD_SYSINSTALL_CRED:-1}" != 0 ]; then
     install_creds+=(-smbios "$(cred systemd.unit-dropin.systemd-sysinstall.service "${state}/sysinstall.conf")")
 fi
@@ -445,7 +593,7 @@ run_install() {
 
 # console_install <name>: install the way a person at the monitor does: pick
 # the target by its number among two disks, confirm with "yes", see the
-# "installed" screen, press Enter to restart.
+# "installed" screen, press Enter to restart (or retain a genuine failure).
 console_install() {
     local name="$1" log="${state}/$1" decoy="${state}/decoy.raw" list n
     rm -f "${decoy}"
@@ -454,10 +602,22 @@ console_install() {
 [Service]
 ExecStartPre=/bin/bash -c 'exec >/dev/ttyS1 2>&1; udevadm settle -t 10 || true; echo "PROBE sysinstall=\$\$(systemctl show -P Result systemd-sysinstall.service) installed-slot-b=\$\$(lsblk -rno PARTLABEL ${target_dev} | grep -cx _empty) installed-parts=\$\$(lsblk -rno TYPE ${target_dev} | grep -cx part) decoy-parts=\$\$(lsblk -rno TYPE /dev/disk/by-id/virtio-bluefin-decoy | grep -cx part)"; sed "s/^/PROBE-LOG disk-choice /" /run/bluefin-installer-disk/sysinstall.env'
 EOF
+    local console_creds=(-smbios "$(cred systemd.unit-dropin.bluefin-installer-done.service "${state}/done-probe.conf")")
+    if [ "${console_failure}" = kernel ]; then
+        # A sysinstall drop-in credential, even an instrumentation-only one,
+        # makes Bluefin's helpers classify the boot as unattended. Instead
+        # extend the disk chooser's existing EnvironmentFile after it exits.
+        cat > "${state}/failure-kernel.conf" <<'FAILURE'
+[Service]
+ExecStartPost=/bin/bash -c 'echo BLUEFIN_INSTALL_KERNEL=/run/bluefin/installer/bluefin/dogfood-missing-kernel.efi >> /run/bluefin-installer-disk/sysinstall.env'
+FAILURE
+        console_creds+=(-smbios "$(cred systemd.unit-dropin.bluefin-installer-disk.service~dogfood-failure "${state}/failure-kernel.conf")")
+    fi
     boot_start "${name}" "${stick[@]}" "${disk[@]}" \
         -drive "if=none,id=decoy,format=raw,file=${decoy}" -device virtio-blk-pci,drive=decoy,serial=bluefin-decoy \
-        -nic none "${install_creds[@]}" -smbios "$(cred systemd.unit-dropin.bluefin-installer-done.service "${state}/done-probe.conf")"
-    wait_prompt "${name}" 'Disk number \(1-2\), or q to cancel:$'
+        -nic none "${install_creds[@]}" "${console_creds[@]}"
+    wait_prompt "${name}" 'Disk number \(1-2\), or q to cancel:$' 300 console
+    hold_console "${name}" disk 'Disk number \(1-2\), or q to cancel:'
     list="$(last_screen "${name}" | grep -E '^  [0-9]\) ')"
     printf '%s\n' "${list}" | sed 's/^/    screen| /'
     n="$(printf '%s\n' "${list}" | sed -n 's/^  \([0-9]\)) .* virtio-bluefin-target$/\1/p')"
@@ -467,13 +627,57 @@ EOF
     ! printf '%s\n' "${list}" | grep -q 'bluefin-installer' || fail "${name}: the installer offers its own stick"
     type_keys "${name}" $'9\n'
     wait_screen "${name}" 'There is no disk 9\.'
-    wait_prompt "${name}" 'Disk number \(1-2\), or q to cancel:$'
+    wait_prompt "${name}" 'Disk number \(1-2\), or q to cancel:$' 300 console
     type_keys "${name}" "${n}"$'\n'
+    if [ "${console_failure}" = kernel ]; then
+        wait_screen "${name}" 'Failed to open kernel image' "${timeout_s}"
+        hold_console "${name}" failure 'Failed to open kernel image'
+        # Keep the guest alive longer than the done screen's normal reboot
+        # countdown, and require fresh /dev/vcs snapshots throughout.
+        for (( n=0; n<16; n++ )); do
+            kill -0 "${qemu_pid}" 2>/dev/null || fail "${name}: failed install rebooted or halted"
+            last_screen "${name}" | grep -q 'Failed to open kernel image' \
+                || fail "${name}: failed install error left the foreground VT"
+            ! last_screen "${name}" | grep -qF 'DOGFOOD-CONSOLE-NOISE' \
+                || fail "${name}: concurrent errors obscured the failed install"
+            sleep 1
+        done
+        hold_console "${name}" failure 'Failed to open kernel image'
+        kill -0 "${qemu_pid}" 2>/dev/null || fail "${name}: failed install rebooted or halted"
+        printf 'PROBE failure-alive=no-reboot-or-halt\n' | tee -a "${log}.console-proof.log"
+        # This is the host intentionally powering off an observed live guest,
+        # not the installer's FailureAction. boot_wait preserves all mirrors.
+        kill "${qemu_pid}" 2>/dev/null || true
+        boot_wait "${name}" ''
+        grep -aqE 'PROBE failure-result=exit-code status=[1-9][0-9]* action=none' "${log}.ttyS1.log" \
+            || fail "${name}: real systemd-sysinstall did not fail with FailureAction=none"
+        grep -aq 'PROBE failure-journal=retained' "${log}.ttyS1.log" \
+            || fail "${name}: the failed sysinstall journal was not retained in the guest"
+        grep -aq 'PROBE failure-parts=0 decoy-parts=0' "${log}.ttyS1.log" \
+            || fail "${name}: prewrite failure left partitions on the target or other disk"
+        grep -aqF "PROBE-LOG failure-disk-choice BLUEFIN_INSTALL_TARGET=${target_dev}" "${log}.ttyS1.log" \
+            || fail "${name}: failed install did not use the interactively chosen disk"
+        grep -aq '^PROBE failure-done-invocation=$' "${log}.ttyS1.log" \
+            || fail "${name}: the done unit ran after failure"
+        ! grep -aq 'bluefin-installer-done: installed, restarting' "${log}.ttyS2.log" \
+            || fail "${name}: the done unit restarted a failed install"
+        ! grep -aq 'is installed\.' "${log}.screen.log" \
+            || fail "${name}: a failed install showed the success screen"
+        grep -aqE 'systemd-sysinstall.service: (Main process exited.*status=[1-9]|Failed with result .exit-code.)' "${log}.ttyS2.log" \
+            || fail "${name}: no real sysinstall service failure in the serial journal"
+        last_screen "${name}" > "${log}.failure.screen.txt"
+        last_screen "${name}" | grep -q 'Failed to open kernel image' \
+            || fail "${name}: the sysinstall error did not remain on the foreground VT"
+        return 0
+    fi
     wait_screen "${name}" "type 'yes' to confirm"
+    wait_prompt "${name}" "type 'yes' to confirm" 300 console
+    hold_console "${name}" summary "type 'yes' to confirm"
     last_screen "${name}" | grep -qF "${target_dev}" || fail "${name}: sysinstall's summary does not show ${target_dev}"
     last_screen "${name}" | sed '/^$/d' | sed 's/^/    screen| /'
     type_keys "${name}" $'yes\n'
     wait_screen "${name}" 'is installed\.' "${timeout_s}"
+    hold_console "${name}" done 'is installed\.'
     # Enter restarts at once, without the countdown.
     type_keys "${name}" $'\n'
     boot_wait "${name}" ''
@@ -511,6 +715,10 @@ CHECK
 elif [ "${install_mode}" = console ]; then
     echo "==> 2/${steps} offline install onto a ${target_kind} disk, typed at the monitor"
     console_install 2-install
+    if [ "${console_failure}" != none ]; then
+        echo "PASS: attended sysinstall failed before disk writes; error visible, service journal retained, no reboot/halt or done unit (artifacts: ${state})"
+        exit 0
+    fi
 else
     echo "==> 2/${steps} offline install onto a ${target_kind} disk: ExecStart=${exec_start} ${install_args} ${target_dev}"
     run_install 2-install

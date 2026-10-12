@@ -4,12 +4,20 @@ sysinstall erases the chosen disk before it writes, so a failed install leaves
 the target blank (projectbluefin/server#308). Upstream's
 systemd-sysinstall.service halts the machine when sysinstall fails
 (FailureAction=halt), and the installer's journal, which lives only in RAM,
-goes with it. Upstream also passes --mute-console=yes, which keeps kernel and
-service-manager messages, such as disk I/O errors, off the console while
-sysinstall runs; sysinstall's own output goes to the console either way.
+goes with it.
 
-That a successful install still reboots on its own is pinned in
-test_usb_installer_prompts.py.
+The console stays muted, so nothing pushes sysinstall's error off the monitor.
+sysinstall runs with --mute-console=yes, as upstream's unit does, and
+bluefin-installer-mute-console.service, pulled in by the installer's prompts,
+keeps kernel messages, such as disk I/O errors, off the console until
+shutdown, the only point at which it is un-muted; they still reach the
+journal. When sysinstall exits, its own mute hands PID 1's status output back
+to the installer command line's systemd.show_status=error, so failed units are
+still reported. sysinstall's own output, its error included, goes to the
+console either way.
+
+That a successful install still reboots on its own, and the installer command
+line's quiet settings, are pinned in test_usb_installer_prompts.py.
 """
 
 from __future__ import annotations
@@ -38,10 +46,10 @@ def test_a_failed_install_leaves_the_machine_up():
     assert SystemdFile(DROPIN).value("Unit", "FailureAction") == "none"
 
 
-def test_kernel_and_service_manager_messages_reach_the_console():
+def test_sysinstall_mutes_console_during_interactive_prompts():
     [argv] = SystemdFile(DROPIN).commands()
     assert argv[0] == "systemd-sysinstall"
-    assert not [word for word in argv if word.startswith("--mute-console")]
+    assert "--mute-console=yes" in argv
 
 
 def test_the_dropin_replaces_upstreams_command(tmp_path):

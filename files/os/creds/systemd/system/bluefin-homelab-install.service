@@ -15,6 +15,8 @@ RequiresMountsFor=/run/bluefin/installer
 # default entry, where ConditionCredential= skips it anyway.
 After=bluefin-installer-secure-boot.service
 After=systemd-vconsole-setup.service systemd-firstboot.service
+Wants=bluefin-installer-mute-console.service
+After=bluefin-installer-mute-console.service
 Before=systemd-sysinstall.service
 
 [Service]

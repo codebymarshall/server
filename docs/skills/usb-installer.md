@@ -63,7 +63,7 @@ UKI's `systemd.setenv=`), `--erase=yes`, and `--reboot=no` with
 restarts the machine: its `SuccessAction=reboot` and `FailureAction=reboot`),
 plus `RemainAfterExit=no` so that still fires once
 upstream's unit is `Type=oneshot` with `RemainAfterExit=yes` (systemd v262).
-It also sets `FailureAction=none` and leaves out upstream's
+It also sets `FailureAction=none` and retains upstream's
 `--mute-console=yes`; what that changes is described after the install steps
 below. The disk UKI sits outside `EFI/Linux` on the stick so systemd-boot
 never offers it there.
@@ -151,16 +151,18 @@ is rejected with `Invalid input …` and the same prompt asked again, so a
 mistyped answer never ends the install. A cancelled disk question fails its
 unit, so sysinstall never starts and no disk is touched.
 
-After a cancel or a failed install the machine stays up: the drop-in sets
-`FailureAction=none` where upstream's unit halts. sysinstall's error stays on
-the monitor, and the journal, which lives only in RAM, is kept until you power
-off (`journalctl -u systemd-sysinstall`, for example over SSH with the
-developer-mode credentials below). sysinstall runs without upstream's
-`--mute-console=yes`, so kernel and service-manager messages, such as disk I/O
-errors, reach the monitor too and can land between its prompts; its own output
-is shown either way. A failure after sysinstall has erased the disk leaves it
-blank ([#308](https://github.com/projectbluefin/server/issues/308)).
-Power-cycle and boot the stick again to retry.
+After cancellation or failure, `FailureAction=none` keeps the machine up and
+sysinstall's own error on the monitor. The RAM journal survives until power-off:
+`journalctl -b -k` and `journalctl -u systemd-sysinstall` (over SSH with the
+developer-mode credentials below). `--mute-console=yes` and
+`bluefin-installer-mute-console.service`, combined with `quiet loglevel=4
+systemd.show_status=error`, keep new kernel and PID 1 noise off the prompts.
+The Secure Boot warning, disk chooser and Homelab join prompt clear earlier
+output and scrollback before drawing, never on exit, preserving cancellation
+reasons. A failure after erasure leaves the disk blank
+([#308](https://github.com/projectbluefin/server/issues/308)); boot the stick again to retry.
+
+The `DOGFOOD_CONSOLE_*` runs in [ddi-installer-build.md](ddi-installer-build.md) check this in QEMU.
 
 The installed disk is identical to one a diskless node installs: stock
 `systemd-sysinstall` with the layout from `files/os/repart.d/` (see
@@ -449,7 +451,10 @@ graphics output, or the firmware's "restore factory keys").
 
 `bluefin-installer-secure-boot.service` runs before `systemd-sysinstall`
 and before the Homelab entries' prompt; both `Requires=` it, so when it
-fails neither starts and no disk is touched. It reads `SecureBoot`,
+fails neither starts and no disk is touched. It pulls in
+`bluefin-installer-mute-console.service` (`systemd-mute-console(1)`) so
+kernel and service-manager log messages do not land over its menus and push
+them off the screen. It reads `SecureBoot`,
 `SetupMode` and `AuditMode` from efivarfs and decides that Secure Boot is
 on **with our keys** when the firmware's `db` variable holds, byte for byte,
 an X.509 certificate from the stick's `loader/keys/auto/db.auth`:
@@ -474,10 +479,7 @@ Unattended installs never ask: see [Unattended installs](#unattended-installs).
 ## See also
 
 - [ddi-installer.md](ddi-installer.md) — boot, install, and update architecture.
-- [ddi-installer-build.md](ddi-installer-build.md) — build and dogfood
-  (`just dogfood-installer`; `DOGFOOD_INSTALL=console` types the install,
-  the root password and a tty1 login on the guest keyboard and checks the
-  screens above).
+- [ddi-installer-build.md](ddi-installer-build.md) — image build and dogfood procedure.
 - [tpm2-credential-sealing.md](tpm2-credential-sealing.md) — first-boot
   credentials and ESP credential files.
 - [secure-boot-keys.md](secure-boot-keys.md) — the keys that sign the stick.

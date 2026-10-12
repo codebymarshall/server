@@ -118,7 +118,7 @@ variables:
     systemd.unit=system-install.target
     systemd.setenv=BLUEFIN_INSTALL_KERNEL=/run/bluefin/installer/bluefin/bluefin-server-%{image-version}.efi
     systemd.set_credential=firstboot.keymap:us
-    console=ttyS0,115200 console=tty0
+    quiet loglevel=4 systemd.show_status=error console=ttyS0,115200 console=tty0
 
 # Transitional, netboot UKI only: bluefin.ignition.allow-unsigned lets a
 # node apply an unsigned bluefin-node.ign (a 404 for bluefin-node.ign.gpg)
