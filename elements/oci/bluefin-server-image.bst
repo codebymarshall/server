@@ -165,6 +165,13 @@ config:
     esp=/tmp/ddi-esp
     install -Dm644 /boot-out/%{disk-uki} "${esp}/EFI/Linux/%{disk-uki}"
     install -Dm644 -t "${esp}/bluefin/repart.d" /boot-out/repart.d/*.conf
+    # On a diskless node rootdisk.raw-part1 and rootdisk.raw-part2 back usr
+    # and usr-verity. Explicit block device paths avoid CopyBlocks=auto
+    # failing when systemd-sysext merges an extension (overlayfs on /usr).
+    sed -i 's|^CopyBlocks=auto|CopyBlocks=/dev/disk/by-loop-ref/rootdisk.raw-part1|' "${esp}/bluefin/repart.d/20-usr-a.conf"
+    sed -i 's|^CopyBlocks=auto|CopyBlocks=/dev/disk/by-loop-ref/rootdisk.raw-part2|' "${esp}/bluefin/repart.d/21-usr-verity-a.conf"
+    grep -q '^CopyBlocks=/dev/disk/by-loop-ref/rootdisk.raw-part1$' "${esp}/bluefin/repart.d/20-usr-a.conf"
+    grep -q '^CopyBlocks=/dev/disk/by-loop-ref/rootdisk.raw-part2$' "${esp}/bluefin/repart.d/21-usr-verity-a.conf"
     d=/tmp/ddi.repart.d
     mkdir -p "${d}"
     printf '[Partition]\nType=usr\nLabel=bluefin_usr_%{image-version}\nUUID=%s\nCopyBlocks=/usr-image/%{image-name}.usr.raw\n' "$(cat /tmp/usr.uuid)" > "${d}/10-usr.conf"

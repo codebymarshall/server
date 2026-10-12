@@ -17,8 +17,10 @@ description: |
     efi-keys/{PK,KEK,db}.auth         Secure Boot enrollment payloads
     repart.d/                         disk layout: ESP, usr A/B + verity, root.
                                       Slot A is copied from the running image
-                                      (CopyBlocks=auto) with the UUIDs dm-verity
-                                      derives from usrhash, for
+                                      (CopyBlocks=auto; rewritten to explicit
+                                      loop partitions in the OS DDI's ESP copy)
+                                      with the UUIDs dm-verity derives from
+                                      usrhash, for
                                       systemd-sysinstall --definitions=
 
   All three pin usrhash= of the same /usr image and are signed with DB, so
