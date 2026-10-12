@@ -1,0 +1,10 @@
+# This single fixed-machine helper authenticates SUDO_UID/GID, pins the machine,
+# validates shared cwd and package command, and drops all privilege before exec.
+# It does not grant systemd-run, nsenter, machinectl, shells, or general sudo.
+ALL ALL=(root) NOPASSWD: /usr/libexec/bluefin-homebrew-enter
+Defaults!/usr/libexec/bluefin-homebrew-enter !use_pty
+Defaults!/usr/libexec/bluefin-homebrew-enter closefrom_override
+# Allowed package argv can contain passwords/tokens. sudoers(5) log_allowed
+# (sudo >= 1.8.29) controls syslog, logfile and sudo's system audit events.
+# Keep denied-command logging; do not change logging for any other sudo rule.
+Defaults!/usr/libexec/bluefin-homebrew-enter !log_allowed

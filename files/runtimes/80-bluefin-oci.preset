@@ -1,0 +1,2 @@
+disable bluefin-oci-owner-prepare.service
+disable bluefin-oci-features.service

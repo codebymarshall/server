@@ -184,3 +184,11 @@ def test_prune_lists_never_touch_load_bearing_paths(name):
         assert ".." not in pattern, pattern
         for protected in ("usr/bin/gpg", "usr/bin/gpgv", "usr/lib/locale", "usr/lib/systemd"):
             assert not Path(protected).match(pattern), (pattern, protected)
+
+
+def test_installer_image_rejects_oversized_sparse_file_before_extraction(tmp_path):
+    image = tmp_path / "bluefin-server-installer_26.10.1.raw"
+    with image.open("wb") as handle:
+        handle.truncate(4 * 2**30)
+    with pytest.raises(SystemExit, match="installer image.*4 GiB"):
+        check_image.main([str(tmp_path)])

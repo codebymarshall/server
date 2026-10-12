@@ -96,6 +96,7 @@
 #   DOGFOOD_CONSOLE_FAILURE=.. none (default) or kernel (console only): a wrong
 #                              guest kernel payload path, before any disk write
 #   DOGFOOD_CONSOLE_HOLD=<s>   hold each installer prompt (default 3; 2-8)
+#   DOGFOOD_PROFILE=<id>      minimal (existing root scenarios) or home-server
 #   DOGFOOD_MEM=<MiB>          guest memory (default 4096)
 #   DOGFOOD_TIMEOUT=<s>        per-boot timeout (default 600; key enrollment: 120)
 set -euo pipefail
@@ -152,6 +153,11 @@ case "${console_hold}" in
 esac
 [ "${install_mode}" = console ] || { [ "${console_noise}" = 0 ] && [ "${console_failure}" = none ]; } \
     || { echo "ERROR: console noise/failure requires DOGFOOD_INSTALL=console" >&2; exit 1; }
+profile="${DOGFOOD_PROFILE:-minimal}"
+case "${profile}" in
+    minimal|home-server) ;;
+    *) echo "ERROR: DOGFOOD_PROFILE must be minimal or home-server" >&2; exit 1 ;;
+esac
 steps=4
 [ -z "${next}" ] || steps=6
 [ "${target_kind}" != prior-install ] || steps=6
@@ -204,6 +210,14 @@ rm -f "${target}"
 truncate -s 16G "${target}"
 vars="${state}/vars.fd"
 cp "${vars_tmpl}" "${vars}"
+
+# Reuse the Homelab harness's stock systemd-boot profile selection. Only the
+# scratch stick changes; the signed UKI and release artifact remain intact.
+cp --reflink=auto "${installer}" "${state}/installer.raw"
+installer="${state}/installer.raw"
+esp_offset="$(sfdisk --json "${installer}" | python3 -c 'import json,sys; print(next(p["start"] for p in json.load(sys.stdin)["partitiontable"]["partitions"] if p.get("name") == "bluefin-installer") * 512)')"
+printf 'timeout 3\nconsole-mode keep\nsecure-boot-enroll if-safe\ndefault bluefin-server-installer_*@%s\n' "${profile}" > "${state}/loader.conf"
+mcopy -o -i "${installer}@@${esp_offset}" "${state}/loader.conf" ::/loader/loader.conf
 
 fail() {
     echo "FAIL: $* (logs: ${state})" >&2
@@ -290,10 +304,32 @@ boot_wait() {
         [ -n "${done_re}" ] && grep -aqE "${done_re}" "${log}.${serial}" 2>/dev/null && { sleep 3; break; }
         sleep 2
     done
-    local timed_out=0
+    local timed_out=0 shutdown_failed=0
     if kill -0 "${qemu_pid}" 2>/dev/null; then
-        [ "$(date +%s)" -ge "${qemu_deadline}" ] && timed_out=1
-        kill "${qemu_pid}" 2>/dev/null || true
+        if [ "$(date +%s)" -ge "${qemu_deadline}" ]; then
+            timed_out=1
+        elif [ "${serial}" = ttyS0 ]; then
+            # Enrollment is a firmware-only reset; no guest filesystem is open.
+            kill "${qemu_pid}" 2>/dev/null || true
+        else
+            # A result is not a power cut: let the guest flush and stop normally.
+            python3 - "${log}.mon" <<'PY' || fail "${name}: cannot request orderly shutdown"
+import socket, sys
+with socket.socket(socket.AF_UNIX) as monitor:
+    monitor.settimeout(5)
+    monitor.connect(sys.argv[1])
+    monitor.recv(4096)
+    monitor.sendall(b"system_powerdown\n")
+PY
+            local shutdown_deadline=$(( $(date +%s) + 120 ))
+            while kill -0 "${qemu_pid}" 2>/dev/null && [ "$(date +%s)" -lt "${shutdown_deadline}" ]; do
+                sleep 1
+            done
+            kill -0 "${qemu_pid}" 2>/dev/null && shutdown_failed=1
+        fi
+        if [ "${timed_out}" = 1 ] || [ "${shutdown_failed}" = 1 ]; then
+            kill "${qemu_pid}" 2>/dev/null || true
+        fi
     fi
     wait "${qemu_pid}" 2>/dev/null || true
     for s in ttyS0 ttyS1 ttyS2; do
@@ -304,6 +340,7 @@ boot_wait() {
     rm -f "${log}.mon"
     grep -aoE 'PROBE[ -].*' "${log}.ttyS1.log" || true
     [ "${timed_out}" = 0 ] || { tail -n 40 "${log}.ttyS0.log" >&2; fail "${name}: no result within ${timeout_s}s"; }
+    [ "${shutdown_failed}" = 0 ] || fail "${name}: guest ignored orderly ACPI shutdown"
 }
 
 # boot <name> <done-regex> <qemu args...>
@@ -523,6 +560,12 @@ for kv in firstboot.locale=C.UTF-8 firstboot.keymap=us firstboot.timezone=UTC 'p
     printf '%s' "${kv#*=}" > "${state}/${kv%%=*}"
     install_creds+=(-smbios "$(cred "${kv%%=*}" "${state}/${kv%%=*}")")
 done
+if [ "${profile}" = home-server ] && [ "${install_mode}" = unattended ]; then
+    printf dogfood > "${state}/bluefin.homebrew.owner"
+    printf '*' > "${state}/passwd.hashed-password.dogfood"
+    install_creds+=(-smbios "$(cred bluefin.homebrew.owner "${state}/bluefin.homebrew.owner")"
+        -smbios "$(cred passwd.hashed-password.dogfood "${state}/passwd.hashed-password.dogfood")")
+fi
 install_creds+=("${screen_creds[@]}")
 if [ "${install_mode}" = console ]; then
     printf 1 > "${state}/console"
@@ -616,6 +659,17 @@ FAILURE
     boot_start "${name}" "${stick[@]}" "${disk[@]}" \
         -drive "if=none,id=decoy,format=raw,file=${decoy}" -device virtio-blk-pci,drive=decoy,serial=bluefin-decoy \
         -nic none "${install_creds[@]}" "${console_creds[@]}"
+    if [ "${profile}" = home-server ]; then
+        wait_prompt "${name}" 'Owner account .*or q to cancel:$'
+        type_keys "${name}" $'root\n'
+        wait_screen "${name}" 'Use a nonroot account name'
+        wait_prompt "${name}" 'Owner account .*or q to cancel:$'
+        type_keys "${name}" $'\n'
+        for option in 'Podman host engine' 'Docker host engine' 'existing Homelab/KubeStellar cluster'; do
+            wait_prompt "${name}" "Enable ${option}.*yes/no or q to cancel:$"
+            type_keys "${name}" $'\n'
+        done
+    fi
     wait_prompt "${name}" 'Disk number \(1-2\), or q to cancel:$' 300 console
     hold_console "${name}" disk 'Disk number \(1-2\), or q to cancel:'
     list="$(last_screen "${name}" | grep -E '^  [0-9]\) ')"
@@ -763,6 +817,11 @@ banner boot
 boots=$(( $(cat /var/lib/dogfood-boots 2>/dev/null || echo 0) + 1 ))
 echo "${boots}" > /var/lib/dogfood-boots
 echo "PROBE boots=${boots}"
+PROBE
+    if [ "${profile}" = home-server ]; then
+        cat "${here}/../tests/fixtures/home-server.probe"
+    fi
+    cat <<'PROBE'
 sync
 echo "PROBE failed=$(systemctl --failed --no-legend | wc -l) $(systemctl --failed --no-legend --plain | cut -d' ' -f1 | tr '\n' ' ')"
 PROBE
@@ -878,6 +937,9 @@ check_disk_boot() {
     local log="${state}/$1.ttyS1.log" serial0="${state}/$1.ttyS0.log" v="$3" b
     grep -aq 'PROBE failed=' "${log}" || fail "$1: probe did not run"
     grep -aq "PROBE os=bluefin-server ${v}" "${log}" || fail "$1: not running ${v}"
+    if [ "${profile}" = home-server ]; then
+        grep -aq 'PROBE home-server=PASS' "${log}" || fail "$1: Home Server acceptance failed"
+    fi
     grep -aq "PROBE boots=$2" "${log}" || fail "$1: expected boot $2 of the persistent root"
     grep -aq "PROBE root=xfs@${target_serial}" "${log}" || fail "$1: / is not the target's xfs root"
     [ "${secure_boot}" != enforcing ] || grep -aq 'PROBE secureboot=enabled (user)' "${log}" \
@@ -914,43 +976,64 @@ banner_lacks() {
     ! grep -aF "PROBE banner-$2=" "${log}" | grep -aqF -- "$3" || fail "$1: console banner after '$2' still shows '$3'"
 }
 
-# console_first_boot <name>: the first boot asks for the root password on
-# tty1; an empty answer is refused, then a password typed twice. At the tty1
-# login the banner shows the hostname and IP address, a wrong password is
-# refused, and root logs in with the password typed.
+# console_first_boot <name>: create the profile's account at tty1, refuse
+# invalid input and a wrong login password, then log in with the typed password.
 console_first_boot() {
-    local name="$1" log="${state}/$1" pw
+    local name="$1" log="${state}/$1" pw user=root
     pw="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
     boot_start "${name}" "${disk[@]}" -nic user,model=virtio-net-pci "${creds[@]}"
-    wait_prompt "${name}" 'new root password' "${timeout_s}"
-    type_keys "${name}" $'\n'
-    wait_screen "${name}" 'not accepted here' 60
-    wait_prompt "${name}" 'new root password' 60
-    type_keys "${name}" "${pw}"$'\n'
-    wait_prompt "${name}" 'root password again' 60
-    type_keys "${name}" "${pw}"$'\n'
+    if [ "${profile}" = home-server ]; then
+        user=dogfood
+        wait_prompt "${name}" 'non-root Homebrew owner account:' "${timeout_s}"
+        type_keys "${name}" $'root\n'
+        wait_screen "${name}" 'Use a nonroot account name' 60
+        wait_prompt "${name}" 'non-root Homebrew owner account:' 60
+        type_keys "${name}" "${user}"$'\n'
+        wait_prompt "${name}" "Password for new Bluefin Homebrew owner ${user}:" 60
+        type_keys "${name}" $'\n'
+        wait_prompt "${name}" 'Confirm account password:' 60
+        type_keys "${name}" $'\n'
+        wait_screen "${name}" 'Account passwords must be non-empty and match' 60
+        wait_prompt "${name}" "Password for new Bluefin Homebrew owner ${user}:" 60
+        type_keys "${name}" "${pw}"$'\n'
+        wait_prompt "${name}" 'Confirm account password:' 60
+        type_keys "${name}" "${pw}"$'\n'
+    else
+        wait_prompt "${name}" 'new root password' "${timeout_s}"
+        type_keys "${name}" $'\n'
+        wait_screen "${name}" 'not accepted here' 60
+        wait_prompt "${name}" 'new root password' 60
+        type_keys "${name}" "${pw}"$'\n'
+        wait_prompt "${name}" 'root password again' 60
+        type_keys "${name}" "${pw}"$'\n'
+    fi
     # agetty reprints the banner when DHCP adds the address.
     wait_screen "${name}" 'ssh root@[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'
     wait_prompt "${name}" ' login:$'
     last_screen "${name}" > "${log}.login-screen.log"
     sed '/^$/d; s/^/    screen| /' "${log}.login-screen.log"
-    type_keys "${name}" $'root\n'
+    type_keys "${name}" "${user}"$'\n'
     wait_prompt "${name}" 'Password:$' 60
     type_keys "${name}" $'wrongpassword\n'
     wait_screen "${name}" 'Login incorrect' 60
     wait_prompt "${name}" ' login:$' 60
-    type_keys "${name}" $'root\n'
+    type_keys "${name}" "${user}"$'\n'
     wait_prompt "${name}" 'Password:$' 60
     type_keys "${name}" "${pw}"$'\n'
     wait_prompt "${name}" '[#$]$' 60
     type_keys "${name}" $'id\n'
-    wait_screen "${name}" 'uid=0\(root\) gid=0\(root\)' 60
+    wait_screen "${name}" "uid=[0-9]+\\(${user}\\) gid=[0-9]+\\(${user}\\)" 60
     last_screen "${name}" | sed '/^$/d' | tail -n 6 | sed 's/^/    screen| /'
     boot_wait "${name}" 'PROBE failed='
-    grep -aqF 'Please enter the new root password' "${log}.screen.log" || fail "${name}: no root password prompt on tty1"
-    grep -aq 'PROBE root-password=set' "${log}.ttyS1.log" || fail "${name}: root has no password after the prompt"
-    grep -aqF 'would lock root for good, so it is not accepted here.' "${log}.screen.log" \
-        || fail "${name}: the empty answer was not refused"
+    if [ "${profile}" = home-server ]; then
+        grep -aq 'PROBE root-password=locked' "${log}.ttyS1.log" || fail "${name}: Home Server unlocked root"
+        ! grep -aqF 'Please enter the new root password' "${log}.screen.log" || fail "${name}: Home Server asked for a root password"
+    else
+        grep -aqF 'Please enter the new root password' "${log}.screen.log" || fail "${name}: no root password prompt on tty1"
+        grep -aq 'PROBE root-password=set' "${log}.ttyS1.log" || fail "${name}: root has no password after the prompt"
+        grep -aqF 'would lock root for good, so it is not accepted here.' "${log}.screen.log" \
+            || fail "${name}: the empty answer was not refused"
+    fi
     local host ip
     host="$(sed -n 's/^PROBE hostname=//p' "${log}.ttyS1.log" | tail -n1)"
     ip="$(sed -n 's/^PROBE ipv4=//p' "${log}.ttyS1.log" | tail -n1)"
@@ -961,7 +1044,7 @@ console_first_boot() {
 
 if [ "${install_mode}" = console ]; then
     probe_creds "${state}/probe.sh" prompt
-    echo "==> 3/${steps} first boot of the target: root password and login typed at tty1"
+    echo "==> 3/${steps} first boot of the target: profile account and login typed at tty1"
     console_first_boot 3-first-boot
 else
     probe_creds "${state}/probe.sh"
@@ -989,7 +1072,12 @@ if [ "${target_kind}" = prior-install ]; then
     check_disk_boot 6-reinstalled-boot 1 "${ver}" 2
 fi
 
-[ "${install_mode}" != console ] || { echo "PASS: offline installer installed ${ver} at the console: the target picked by number from a list with size and model, confirmed, 'installed, remove the USB stick' shown before the restart; the first boot refused an empty root password, took one typed at tty1, showed the hostname and IP address on the login banner, and root logged in at tty1 with it"; exit 0; }
+if [ "${install_mode}" = console ]; then
+    login_proof="the first boot refused an empty root password, took one typed at tty1, showed the hostname and IP address on the login banner, and root logged in at tty1 with it"
+    [ "${profile}" != home-server ] || login_proof="the nonroot owner logged in at tty1, root stayed locked, and the SSH Homebrew and host-engine workloads passed on both installed boots"
+    echo "PASS: offline installer installed ${ver} at the console: the target picked by number from a list with size and model, confirmed, 'installed, remove the USB stick' shown before the restart; ${login_proof}"
+    exit 0
+fi
 [ -n "${next}" ] || { echo "PASS: offline installer installed ${ver} onto a ${target_kind} disk$([ "${target_kind}" = prior-install ] && echo ' and again over that install')$([ "${secure_boot}" = off ] && echo ' without Secure Boot, only once a credential allowed it'); the target booted from its own bluefin_usr_${ver} slot (also with the installer attached) with slot B and the xfs root created on first boot and no failed units"; exit 0; }
 
 if [ -n "${next_ver}" ]; then

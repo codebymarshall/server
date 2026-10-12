@@ -1,0 +1,46 @@
+# Bluefin Home Server: mandatory system-container Homebrew, no host Brew.
+# Pass as ignition.config; Ignition reads this Butane YAML directly.
+# The native installer carries the compressed machine through its ESP seed.
+# First-boot sysupdate imports it without a manual toolbox or network bootstrap.
+# Account/password/key material is privately provisioned via credentials, or
+# the owner setup service creates the nonroot account before the first console login.
+# Optional host engines and the existing Homelab/KubeStellar profile use
+# bluefin.homebrew.{podman,docker,cluster} boolean credentials. The OCI unit
+# defaults below also cover template-only netboot; explicit selections win.
+# Podman defaults on; Docker, the cluster and full federation stay off.
+variant: fcos
+version: 1.7.0
+systemd:
+  units:
+    - name: bluefin-root-password-prompt.service
+      mask: true
+    # Requires the account/prefix preparation service and waits for guest Brew.
+    - name: bluefin-homebrew.service
+      enabled: true
+    # Keep the system-container image/version alias current before it starts.
+    - name: bluefin-sysext-fetch.service
+      enabled: true
+    - name: bluefin-oci-features.service
+      dropins:
+        - name: 40-home-server.conf
+          contents: |
+            [Service]
+            SetCredential=bluefin.homebrew.profile:home-server
+    - name: bluefin-oci-owner-prepare.service
+      dropins:
+        - name: 40-home-server.conf
+          contents: |
+            [Service]
+            SetCredential=bluefin.homebrew.profile:home-server
+    # The OS sshd configuration permits public keys only, never passwords.
+    - name: sshd.service
+      enabled: true
+storage:
+  files:
+    - path: /etc/sysupdate.d/homebrew.feature.d/50-home-server.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Feature]
+          Enabled=true

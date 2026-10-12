@@ -34,6 +34,12 @@ description: |
     zfs_<ver>.raw.zst, kubestellar_<ver>.raw.zst, kubeadm_<ver>.raw.zst,
     homelab_<ver>.raw.zst, argo-workflows_<ver>.raw.zst, mcp_<ver>.raw.zst,
     nvidia-open-595_<ver>.raw.zst          opt-in sysexts locked to this image version
+    podman_<ver>.raw.zst, docker_<ver>.raw.zst
+                                           opt-in rootless host engine sysexts
+    homebrew_<ver>.raw.zst                 immutable Homebrew system container;
+                                           writable packages persist separately
+    home-server.bu, home-server-cluster.bu  Home installer profiles; the cluster
+                                           variant reuses the Homelab defaults
     k0s-<k0s-ver>.raw.zst                  opt-in k0s sysext (own version axis)
     nvidia-container-toolkit-<ctk-ver>.raw.zst
                                            opt-in NVIDIA Container Toolkit sysext
@@ -55,6 +61,8 @@ build-depends:
 - freedesktop-sdk.bst:public-stacks/runtime-gnu.bst
 - freedesktop-sdk.bst:components/dosfstools.bst
 - freedesktop-sdk.bst:components/findutils.bst
+- freedesktop-sdk.bst:components/sed.bst
+- freedesktop-sdk.bst:components/gzip.bst
 - freedesktop-sdk.bst:components/mtools.bst
 - freedesktop-sdk.bst:components/systemd.bst
 - filename: oci/bluefin-server-usr.bst
@@ -102,6 +110,18 @@ build-depends:
 - filename: homelab/homelab-templates.bst
   config:
     location: /homelab-templates
+- filename: homebrew/image.bst
+  config:
+    location: /homebrew-machine
+- filename: homebrew/templates.bst
+  config:
+    location: /homebrew-templates
+- filename: runtimes/podman-sysext.bst
+  config:
+    location: /sysext/podman
+- filename: runtimes/docker-sysext.bst
+  config:
+    location: /sysext/docker
 
 variables:
   image-name: bluefin-server_%{image-version}
@@ -239,21 +259,42 @@ config:
     # signed (a signature would make the stick differ on every build): the
     # copy is exactly as trustworthy as the disk it lands on.
     hl="${esp}/bluefin/homelab"
+    extensions="${esp}/bluefin/extensions"
     install -Dm644 -t "${hl}" /homelab-templates/homelab-control-plane.bu /homelab-templates/homelab-node.bu
-    install -Dm644 -t "${hl}/extensions" /sysext/kubeadm/kubeadm_%{image-version}.raw.zst \
+    install -Dm644 -t "${extensions}" /sysext/kubeadm/kubeadm_%{image-version}.raw.zst \
       /sysext/homelab/homelab_%{image-version}.raw.zst \
       /sysext/argo-workflows/argo-workflows_%{image-version}.raw.zst \
       /sysext/mcp/mcp_%{image-version}.raw.zst \
-      /sysext/kubestellar/kubestellar_%{image-version}.raw.zst
-    (cd "${hl}/extensions" && sha256sum --binary *.raw.zst > SHA256SUMS)
+      /sysext/kubestellar/kubestellar_%{image-version}.raw.zst \
+      /homebrew-machine/homebrew_%{image-version}.raw.zst \
+      /sysext/podman/podman_%{image-version}.raw.zst \
+      /sysext/docker/docker_%{image-version}.raw.zst
+    (cd "${extensions}" && sha256sum --binary *.raw.zst > SHA256SUMS)
+    # FAT metadata/slack plus room for both installed UKIs and updates.
+    payload="$(du -sb "${extensions}")"
+    payload="${payload%%[[:space:]]*}"
+    uki_bytes="$(stat -c %s /boot-out/%{disk-uki})"
+    target_mib=$(( ((payload + 2 * uki_bytes) * 5 / 4 + 128 * 1048576 + 1048575) / 1048576 ))
+    [ "${target_mib}" -ge 1024 ] || target_mib=1024
     mkdir -p "${hl}/repart.d/10-esp.conf.d"
-    printf '[Partition]\nCopyFiles=/run/bluefin/installer/bluefin/homelab/extensions:/bluefin/extensions\n' \
+    printf '[Partition]\nCopyFiles=/run/bluefin/installer/bluefin/extensions:/bluefin/extensions\nSizeMinBytes=%sM\nSizeMaxBytes=%sM\n' "${target_mib}" "${target_mib}" \
       > "${hl}/repart.d/10-esp.conf.d/50-bluefin-homelab.conf"
+    # Root is deferred to first boot; seed the machine and optional layers
+    # together on the ESP for the existing native sysupdate importer.
+    hs="${esp}/bluefin/home-server"
+    install -Dm644 -t "${hs}" /homebrew-templates/home-server*.bu
+    mkdir -p "${hs}/repart.d/10-esp.conf.d"
+    printf '[Partition]\nCopyFiles=/run/bluefin/installer/bluefin/extensions:/bluefin/extensions\nSizeMinBytes=%sM\nSizeMaxBytes=%sM\n' "${target_mib}" "${target_mib}" \
+      > "${hs}/repart.d/10-esp.conf.d/50-home-server.conf"
     d=/tmp/installer.repart.d
     mkdir -p "${d}"
     printf '[Partition]\nType=usr\nLabel=bluefin-installer-usr\nCopyBlocks=/usr-image/%{image-name}.usr.raw\n' > "${d}/10-usr.conf"
     printf '[Partition]\nType=usr-verity\nLabel=bluefin-installer-usr-verity\nCopyBlocks=/usr-image/%{image-name}.usr-verity.raw\n' > "${d}/20-usr-verity.conf"
-    printf '[Partition]\nType=esp\nLabel=bluefin-installer\nFormat=vfat\nCopyFiles=%s:/\nSizeMinBytes=512M\n' "${esp}" > "${d}/30-esp.conf"
+    payload="$(du -sb "${esp}")"
+    payload="${payload%%[[:space:]]*}"
+    esp_mib=$(( (payload * 5 / 4 + 64 * 1048576 + 1048575) / 1048576 ))
+    [ "${esp_mib}" -ge 512 ] || esp_mib=512
+    printf '[Partition]\nType=esp\nLabel=bluefin-installer\nFormat=vfat\nCopyFiles=%s:/\nSizeMinBytes=%sM\nSizeMaxBytes=%sM\n' "${esp}" "${esp_mib}" "${esp_mib}" > "${d}/30-esp.conf"
     find "${esp}" -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +
     systemd-repart --empty=create --size=auto --offline=yes --dry-run=no \
       --seed=6f1b0fe2-3c2a-4f2e-9f0a-b1e5e7a5e004 \
@@ -270,6 +311,10 @@ config:
        /sysext/nvidia-open-595/nvidia-open-595_%{image-version}.raw.zst \
        /sysext/nvidia-container-toolkit/nvidia-container-toolkit-*.raw.zst "%{install-root}/"
     install -m644 -t "%{install-root}" /homelab-templates/*.bu /homelab-templates/*.ign
+    cp /homebrew-machine/homebrew_%{image-version}.raw.zst \
+       /sysext/podman/podman_%{image-version}.raw.zst \
+       /sysext/docker/docker_%{image-version}.raw.zst "%{install-root}/"
+    install -m644 -t "%{install-root}" /homebrew-templates/home-server*.bu
 
   - |
     set -eu

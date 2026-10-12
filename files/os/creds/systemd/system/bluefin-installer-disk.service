@@ -10,6 +10,10 @@ Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb
 # the check did not pass (sysinstall Requires= that too), so a cancelled
 # install asks nothing more.
 After=bluefin-installer-secure-boot.service bluefin-homelab-install.service
+# Condition-skipped on minimal/Homelab; failed on a cancelled Home question.
+# Requires + After prevents the disk question after that cancellation.
+Requires=bluefin-home-server-install.service
+After=bluefin-home-server-install.service
 After=systemd-vconsole-setup.service systemd-firstboot.service
 Wants=bluefin-installer-mute-console.service
 After=bluefin-installer-mute-console.service

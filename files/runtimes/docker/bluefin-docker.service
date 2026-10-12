@@ -1,0 +1,28 @@
+[Unit]
+Description=Bluefin owner rootless Docker engine (independent containerd)
+ConditionUser=!root
+
+[Service]
+Type=notify
+NotifyAccess=all
+Environment=PATH=/usr/lib/bluefin/docker/bin:/usr/bin:/usr/sbin
+Environment=LD_LIBRARY_PATH=/usr/lib/bluefin/docker/lib
+Environment=XTABLES_LIBDIR=/usr/lib/bluefin/docker/lib/xtables
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_NET=slirp4netns
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER=builtin
+Environment=DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR=%t/bluefin-docker-rootlesskit
+ExecStart=/usr/lib/bluefin/docker/bin/dockerd-rootless.sh --host=unix://%t/bluefin-docker/api.sock --data-root=%h/.local/share/bluefin-docker --exec-root=%t/bluefin-docker/exec --pidfile=%t/bluefin-docker/daemon.pid --userland-proxy=false
+RuntimeDirectory=bluefin-docker
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+UMask=0077
+Delegate=yes
+KillMode=mixed
+TimeoutStopSec=120
+Restart=on-failure
+LimitNOFILE=infinity
+LimitNPROC=infinity
+TasksMax=infinity
+
+[Install]
+WantedBy=default.target

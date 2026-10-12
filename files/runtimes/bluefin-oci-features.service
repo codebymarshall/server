@@ -1,0 +1,11 @@
+[Unit]
+Description=Select optional Home Server runtime extensions before fetching
+Before=bluefin-sysext-fetch.service
+
+[Service]
+Type=oneshot
+ImportCredential=bluefin.homebrew.profile
+ImportCredential=bluefin.homebrew.podman
+ImportCredential=bluefin.homebrew.docker
+ExecStart=/usr/libexec/bluefin-oci-owner-prepare --configure-features
+RemainAfterExit=yes

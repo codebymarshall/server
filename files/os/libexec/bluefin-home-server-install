@@ -1,0 +1,153 @@
+#!/usr/bin/bash
+# Prepare stock sysinstall arguments for the signed Home Server UKI profile.
+# Prepared machine and sysext payloads travel through the existing ESP seed.
+# This helper never installs an OS, creates a user, or erases a disk.
+# Runtime files are private: sysinstall encrypts the selected credentials
+# alongside the installed disk UKI. The existing Homelab argument variable
+# remains independent. BLUEFIN_INSTALLER_HOME_SERVER overrides the stick path
+# for tests; the shipped unit uses the fixed installer path.
+
+set -euo pipefail
+export LC_ALL=C
+umask 077
+
+PROG="${0##*/}"
+creds="${CREDENTIALS_DIRECTORY:?no credentials directory}"
+out="${RUNTIME_DIRECTORY:?no runtime directory}"
+src="${BLUEFIN_INSTALLER_HOME_SERVER:-/run/bluefin/installer/bluefin/home-server}"
+rm -f "${out}/sysinstall.env"
+
+die() { printf '%s: %s\n' "${PROG}" "$*" >&2; exit 1; }
+cancel() {
+    printf '\nInstallation cancelled. No disk was changed.\n'
+    die "installation cancelled"
+}
+
+credential() {
+    local file="${creds}/$1" value
+    [ -f "${file}" ] || return 0
+    # A successful read through the NUL delimiter proves a NUL is present;
+    # command substitution alone would silently discard it.
+    if IFS= read -r -d '' value < "${file}"; then
+        die "NUL byte in credential $1"
+    fi
+    value="$(<"${file}")"
+    printf '%s' "${value}"
+}
+
+boolean() {
+    case "$1" in
+        1|yes|true|on) printf true ;;
+        0|no|false|off) printf false ;;
+        *) return 1 ;;
+    esac
+}
+
+owner_valid() {
+    [[ "$1" =~ ^[a-z_][a-z0-9_-]*$ ]] && [ "${#1}" -le 31 ] && [ "$1" != root ]
+}
+
+unattended=false
+for file in "${creds}/systemd.unit-dropin.systemd-sysinstall.service" "${creds}"/systemd.unit-dropin.systemd-sysinstall.service~*; do
+    if [ -f "${file}" ]; then
+        unattended=true
+        break
+    fi
+done
+
+[ "$(credential bluefin.install-home-server)" = 1 ] || die "bluefin.install-home-server must be 1"
+[ ! -f "${creds}/bluefin.install-homelab" ] || die "Home Server and Homelab installer profiles cannot both be selected"
+if [ -f "${creds}/bluefin.homebrew.profile" ]; then
+    [ "$(credential bluefin.homebrew.profile)" = home-server ] || die "bluefin.homebrew.profile must be home-server"
+fi
+[ -s "${src}/home-server.bu" ] || die "${src}/home-server.bu is missing from the installer"
+[[ -d "${src}/repart.d/10-esp.conf.d" ]] || die "${src}/repart.d/10-esp.conf.d is missing from the installer"
+
+owner="$(credential bluefin.homebrew.owner)"
+if [ -f "${creds}/bluefin.homebrew.owner" ]; then
+    owner_valid "${owner}" || die "bluefin.homebrew.owner must name a nonroot account (1-31 lowercase characters)"
+elif [ "${unattended}" = true ]; then
+    die "unattended Home Server installation requires bluefin.homebrew.owner"
+fi
+
+# Validate supplied options before asking anything, and never log their values
+# or any account/password/key credential contents.
+options=(podman docker cluster)
+values=()
+for option in "${options[@]}"; do
+    value=false
+    [ "${option}" != podman ] || value=true
+    if [ -f "${creds}/bluefin.homebrew.${option}" ]; then
+        supplied="$(credential "bluefin.homebrew.${option}")"
+        value="$(boolean "${supplied}")" || die "bluefin.homebrew.${option} must be a boolean"
+    fi
+    values+=("${value}")
+done
+
+if [ "${unattended}" = true ]; then
+    [ -s "${creds}/passwd.hashed-password.${owner}" ] || die "unattended Home Server installation requires private passwd.hashed-password.${owner} provisioning"
+else
+    printf '\nBluefin Home Server\n\nHomebrew is included and ready at the first owner login.\n'
+    printf 'Choose a nonroot owner account, or press Enter to create it on first boot.\n'
+    printf 'An existing account must be privately provisioned; no password or SSH key is stored in the image.\n'
+    if [ ! -f "${creds}/bluefin.homebrew.owner" ]; then
+        while :; do
+            printf '\nOwner account [create on first boot], or q to cancel: '
+            IFS= read -r owner || cancel
+            case "${owner}" in q|Q|quit|cancel) cancel ;; '') break ;; esac
+            owner_valid "${owner}" && break
+            printf 'Use a nonroot account name (1-31 lowercase letters, digits, underscores or hyphens).\n'
+        done
+    fi
+    labels=('Podman host engine' 'Docker host engine' 'existing Homelab/KubeStellar cluster (full federation stays off)')
+    for i in "${!options[@]}"; do
+        [ ! -f "${creds}/bluefin.homebrew.${options[i]}" ] || continue
+        while :; do
+            default=no
+            [ "${values[i]}" != true ] || default=yes
+            printf '\nEnable %s? [%s], yes/no or q to cancel: ' "${labels[i]}" "${default}"
+            IFS= read -r answer || cancel
+            case "${answer}" in q|Q|quit|cancel) cancel ;; '') answer="${default}" ;; esac
+            if value="$(boolean "${answer}")"; then
+                values[i]="${value}"
+                break
+            fi
+            printf 'Choose yes or no (Enter accepts the displayed default).\n'
+        done
+    done
+fi
+
+template="${src}/home-server.bu"
+if [ "${values[2]}" = true ]; then
+    template="${src}/home-server-cluster.bu"
+    [ -s "${template}" ] || die "${template} is missing from the installer"
+fi
+args=("--definitions=${src}/repart.d" "--load-credential=ignition.config:${template}")
+printf home-server > "${out}/profile"
+args+=("--load-credential=bluefin.homebrew.profile:${out}/profile")
+for i in "${!options[@]}"; do
+    option="${options[i]}"
+    printf '%s' "${values[i]}" > "${out}/${option}"
+    args+=("--load-credential=bluefin.homebrew.${option}:${out}/${option}")
+done
+if [ -n "${owner}" ]; then
+    printf '%s' "${owner}" > "${out}/owner"
+    args+=("--load-credential=bluefin.homebrew.owner:${out}/owner")
+fi
+
+# Account provisioning comes from private boot credentials, never a shipped
+# template. Forward only account/key inputs, not installer unit overrides.
+for file in "${creds}/sysusers.extra" "${creds}/tmpfiles.extra" "${creds}"/passwd.hashed-password.* "${creds}"/ssh.authorized_keys.*; do
+    [ -f "${file}" ] || continue
+    name="${file##*/}"
+    case "${name}" in
+        passwd.hashed-password.*) owner_valid "${name#passwd.hashed-password.}" || [ "${name#passwd.hashed-password.}" = root ] || die "invalid password credential account" ;;
+        ssh.authorized_keys.*) owner_valid "${name#ssh.authorized_keys.}" || [ "${name#ssh.authorized_keys.}" = root ] || die "invalid SSH credential account" ;;
+    esac
+    # Credential mounts are private to this unit, even while it stays active.
+    # Keep a private runtime copy that the separate sysinstall unit can read.
+    install -m 0600 -- "${file}" "${out}/${name}"
+    args+=("--load-credential=${name}:${out}/${name}")
+done
+printf 'BLUEFIN_HOME_SERVER_INSTALL_ARGS=%s\n' "${args[*]}" > "${out}/sysinstall.env"
+printf '\nHome Server profile prepared: Homebrew included; optional services run only when selected.\n'

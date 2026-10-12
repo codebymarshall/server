@@ -55,6 +55,12 @@ depends:
   # system-container helper (machinectl wrapper)
   - bluefin-server/os-system-container.bst
 
+  # Home Server command bridge and opt-in host engine orchestration.
+  # Machine images and engine binaries are separate optional transfers.
+  - homebrew/dispatch.bst
+  - homebrew/image-integration.bst
+  - runtimes/owner-integration.bst
+
   # Console issue banner (the KubeStellar sysext adds its dashboard URL)
   - bluefin-server/os-issue.bst
 

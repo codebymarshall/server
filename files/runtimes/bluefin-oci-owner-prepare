@@ -1,0 +1,213 @@
+#!/bin/bash
+# Root provisioning entrypoint, not an engine bridge or a sudo target.
+set -euo pipefail
+state=${BLUEFIN_OCI_STATE_FILE:-/var/lib/bluefin-homebrew/runtimes.state}
+has_selection=false
+podman=false
+docker=false
+fail() { printf 'bluefin-oci-owner-prepare: %s\n' "$*" >&2; exit 1; }
+credentials=${CREDENTIALS_DIRECTORY:-/run/credentials/bluefin-oci-owner-prepare.service}
+sysupdate_root=${BLUEFIN_SYSUPDATE_ROOT:-}
+# Let systemd merge feature/drop-in precedence, just as sysupdate does. The
+# selected engine must agree with what fetching actually enabled, including
+# an operator's later disable; never try to start an absent selected sysext.
+feature_selection() {
+    local engine config line section value
+    local -a options=()
+    [[ -z $sysupdate_root ]] || options+=(--root="$sysupdate_root")
+    for engine in podman docker; do
+        config=$(systemd-analyze "${options[@]}" cat-config "sysupdate.d/$engine.feature") || fail "cannot read $engine feature configuration"
+        section=
+        while IFS= read -r line; do
+            if [[ $line =~ ^[[:space:]]*\[([^]]+)\][[:space:]]*$ ]]; then
+                section=${BASH_REMATCH[1]}
+            elif [[ $section == Feature && $line =~ ^[[:space:]]*Enabled[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]]; then
+                value=${BASH_REMATCH[1],,}
+                case $value in
+                    1|yes|y|true|t|on) printf -v "$engine" '%s' true ;;
+                    0|no|n|false|f|off) printf -v "$engine" '%s' false ;;
+                    *) fail "$engine feature Enabled must be a boolean" ;;
+                esac
+            fi
+        done <<< "$config"
+    done
+}
+if [[ -f $credentials/bluefin.homebrew.profile && $(cat "$credentials/bluefin.homebrew.profile") == home-server ]]; then
+    podman=true
+    has_selection=true
+fi
+if [[ -f "$state" ]]; then
+    [[ ! -L "$state" && $(stat -c %u "$state") == 0 ]] || fail 'selection state must be root-owned and not a symlink'
+    mode=$(stat -c %a "$state")
+    (( (8#$mode & 0022) == 0 )) || fail 'selection state must not be group/world writable'
+    has_selection=true
+    IFS=: read -r podman docker < "$state"
+fi
+for engine in podman docker; do
+    credential="$credentials/bluefin.homebrew.$engine"
+    if [[ -f "$credential" ]]; then
+        has_selection=true
+        value=$(cat "$credential")
+        printf -v "$engine" '%s' "$value"
+    fi
+    value=${!engine}
+    case "$value" in true|false) ;; *) fail "$engine selection must be true or false" ;; esac
+done
+if [[ ${1:-} == --print-selection && $# == 1 ]]; then
+    printf '%s:%s\n' "$podman" "$docker"
+    exit 0
+fi
+[[ $# == 0 || ( $# == 1 && $1 == --configure-features ) ]] || fail 'usage: bluefin-oci-owner-prepare [--print-selection|--configure-features]'
+[[ $EUID == 0 ]] || fail 'owner preparation requires root'
+if [[ ${1:-} == --configure-features ]]; then
+    [[ $has_selection == true ]] || exit 0
+    for engine in podman docker; do
+        dropindir="$sysupdate_root/etc/sysupdate.d/$engine.feature.d"
+        install -d -m0755 "$dropindir"
+        dropin="$dropindir/50-bluefin-home-server.conf"
+        managed='# Managed by bluefin-oci-features'
+        if [[ -e $dropin || -L $dropin ]]; then
+            [[ ! -L $dropin && $(stat -c %u "$dropin") == 0 ]] || fail 'feature configuration must be root-owned and not a symlink'
+            IFS= read -r firstline < "$dropin"
+            # Even a file at our default path remains the operator's if it
+            # was not created by this helper. Later drop-ins also stay intact.
+            [[ $firstline == "$managed" ]] || continue
+        fi
+        (umask 022; printf '%s\n[Feature]\nEnabled=%s\n' "$managed" "${!engine}" > "$dropin.new")
+        mv -f "$dropin.new" "$dropin"
+    done
+    feature_selection
+    install -d -m0755 "$(dirname "$state")"
+    (umask 022; printf '%s:%s\n' "$podman" "$docker" > "$state.new")
+    chown root:root "$state.new"
+    mv -f "$state.new" "$state"
+    exit 0
+fi
+feature_selection
+ownerfile=/var/lib/bluefin-homebrew/owner
+[[ $(stat -c %u "$ownerfile") == 0 && ! -L "$ownerfile" ]] || fail 'owner record must be root-owned and not a symlink'
+mode=$(stat -c %a "$ownerfile")
+(( (8#$mode & 0022) == 0 )) || fail 'owner record must not be group/world writable'
+IFS=: read -r uid gid < "$ownerfile"
+[[ $uid =~ ^[0-9]+$ && $gid =~ ^[0-9]+$ && $uid != 0 ]] || fail 'owner record must contain non-root UID:GID'
+entry=$(getent passwd "$uid") || fail 'owner account does not exist'
+IFS=: read -r owner _ account_uid account_gid _ home _ <<< "$entry"
+[[ $account_uid == "$uid" && $account_gid == "$gid" ]] || fail 'owner identity changed'
+[[ $owner =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*[$]?$ ]] || fail 'invalid owner account name'
+
+if [[ $podman == true || $docker == true ]]; then
+    [[ -f /sys/fs/cgroup/cgroup.controllers ]] || fail 'rootless runtimes require cgroup v2'
+    [[ ! -f /proc/sys/user/max_user_namespaces || $(cat /proc/sys/user/max_user_namespaces) != 0 ]] || fail 'unprivileged user namespaces are disabled'
+    [[ ! -f /proc/sys/kernel/unprivileged_userns_clone || $(cat /proc/sys/kernel/unprivileged_userns_clone) == 1 ]] || fail 'unprivileged user namespaces are disabled'
+    # These FSDK shadow helpers authorize only the caller's subordinate ranges.
+    # No broad sudo/systemd-run permission and no host Docker group are needed.
+    for helper in newuidmap newgidmap; do
+        [[ -x /usr/bin/$helper && $(stat -c %u /usr/bin/$helper) == 0 ]] || fail "$helper must be a root-owned FSDK executable in the host image"
+    done
+    install -d -m0755 /run/lock
+    exec 9>/run/lock/bluefin-rootless-subids.lock
+    flock -x 9
+    for map in /etc/subuid /etc/subgid; do
+        [[ ! -L "$map" ]] || fail "$map must not be a symlink"
+        [[ -e "$map" ]] || install -m0644 /dev/null "$map"
+        [[ $(stat -c %u "$map") == 0 ]] || fail "$map must be root-owned"
+        mode=$(stat -c %a "$map")
+        (( (8#$mode & 0022) == 0 )) || fail "$map must not be group/world writable"
+        next=100000
+        found=false
+        lookup=passwd
+        [[ $map != /etc/subgid ]] || lookup=group
+        account_ids=()
+        while IFS=: read -r _ _ account_id _; do
+            [[ $account_id =~ ^[0-9]+$ ]] || fail "invalid $lookup account ID"
+            account_id=$((10#$account_id))
+            account_ids+=("$account_id")
+            (( account_id < next )) || next=$((account_id + 1))
+        done < <(getent "$lookup")
+        while IFS=: read -r name start count extra || [[ -n "$name" ]]; do
+            [[ -z "$name" || $name == \#* ]] && continue
+            [[ $start =~ ^[0-9]+$ && $count =~ ^[0-9]+$ && -z ${extra:-} ]] || fail "malformed $map entry"
+            start=$((10#$start)); count=$((10#$count))
+            (( start > 0 && count > 0 && start + count <= 4294967295 )) || fail "invalid $map range"
+            for account_id in "${account_ids[@]}"; do
+                (( account_id < start || account_id >= start + count )) || fail "$map subordinate range overlaps an existing $lookup ID"
+            done
+            (( start + count <= next )) || next=$((start + count))
+            if [[ $name == "$owner" || $name == "$uid" ]]; then
+                (( count >= 65536 )) || fail "$owner needs at least 65536 subordinate IDs in $map"
+                found=true
+                owner_start=$start
+                owner_end=$((start + count))
+            fi
+        done < "$map"
+        if [[ $found == false ]]; then
+            (( next + 65536 <= 4294967295 )) || fail "no subordinate ID space in $map"
+            printf '\n%s:%s:65536\n' "$owner" "$next" >> "$map"
+        fi
+        if [[ $found == true ]]; then
+            while IFS=: read -r name start count _; do
+                [[ -z "$name" || $name == \#* || $name == "$owner" || $name == "$uid" ]] && continue
+                start=$((10#$start)); count=$((10#$count))
+                (( start >= owner_end || start + count <= owner_start )) || fail "$map owner range overlaps another identity"
+            done < "$map"
+        fi
+    done
+    flock -u 9
+    loginctl enable-linger "$owner"
+    systemctl start "user@$uid.service"
+fi
+
+# Never root-chown/chmod below a user-owned runtime directory: endpoint paths
+# could otherwise race into privileged host paths. Dispatcher pins these dirs;
+# the user manager maintains them with RuntimeDirectoryPreserve=yes.
+for engine in podman docker; do
+    dir="/run/user/$uid/bluefin-$engine"
+    [[ -d "$dir" && ! -L "$dir" && $(stat -c %u "$dir") == "$uid" && $(stat -c %a "$dir") == 700 ]] || fail "$engine owner endpoint directory is missing or not private"
+done
+if [[ $podman == true ]]; then
+    [[ -x /usr/lib/bluefin/podman/podman ]] || fail 'selected Podman sysext is not merged'
+    # C entries populate absent targets, never replace operator configuration.
+    systemd-tmpfiles --create /usr/lib/bluefin/podman/tmpfiles.conf
+fi
+if [[ $docker == true ]]; then
+    [[ -x /usr/lib/bluefin/docker/bin/dockerd ]] || fail 'selected Docker sysext is not merged'
+fi
+if systemctl is-active --quiet "user@$uid.service"; then
+    systemctl --user --machine="$owner@.host" daemon-reload
+    for engine in podman docker; do
+        unit=bluefin-docker.service
+        [[ $engine != podman ]] || unit=bluefin-podman.socket
+        if [[ ${!engine} == true ]]; then
+            systemctl --user --machine="$owner@.host" enable --now "$unit"
+        elif systemctl --user --machine="$owner@.host" cat "$unit" >/dev/null 2>&1; then
+            systemctl --user --machine="$owner@.host" disable --now "$unit"
+            [[ $engine != podman ]] || systemctl --user --machine="$owner@.host" stop bluefin-podman.service
+        fi
+    done
+fi
+
+# The dispatcher binds this root-owned directory read-only at the same guest
+# path and parses assignments (never sources it), preserving caller overrides.
+configdir=/etc/bluefin-homebrew
+[[ ! -L $configdir ]] || fail 'runtime environment directory must not be a symlink'
+if [[ ! -d $configdir ]]; then
+    install -d -m0755 "$configdir"
+fi
+[[ $(stat -c %u "$configdir") == 0 ]] || fail 'runtime environment directory must be root-owned'
+mode=$(stat -c %a "$configdir")
+(( (8#$mode & 0022) == 0 )) || fail 'runtime environment directory must not be group/world writable'
+envfile="$configdir/runtime.$uid.env"
+managed='# Managed by bluefin-oci-owner-prepare'
+if [[ -e $envfile || -L $envfile ]]; then
+    [[ ! -L $envfile && $(stat -c %u "$envfile") == 0 ]] || fail 'runtime environment must be root-owned and not a symlink'
+    mode=$(stat -c %a "$envfile")
+    (( (8#$mode & 0022) == 0 )) || fail 'runtime environment must not be group/world writable'
+    IFS= read -r firstline < "$envfile"
+    # Preserve deliberately supplied operator configuration at the same path.
+    [[ $firstline == "$managed" ]] || exit 0
+fi
+docker_backend=podman
+[[ $docker != true ]] || docker_backend=docker
+(umask 022; printf '%s\nDOCKER_HOST=unix:///run/bluefin-engines/%s/%s/api.sock\nCONTAINER_HOST=unix:///run/bluefin-engines/%s/podman/api.sock\n' "$managed" "$uid" "$docker_backend" "$uid" > "$envfile.new")
+chown root:root "$envfile.new"
+mv -f "$envfile.new" "$envfile"

@@ -304,7 +304,9 @@ v="${ver//./\\.}"
 # the control plane's template enables the add-ons, a node's only the two.
 for role in cp node; do
     check "${role}-2-install" "PROBE sysinstall=success 0 homelab-install=success"
-    check "${role}-2-install" "PROBE esp-seed=SHA256SUMS argo-workflows_${v}\.raw\.zst homelab_${v}\.raw\.zst kubeadm_${v}\.raw\.zst kubestellar_${v}\.raw\.zst mcp_${v}\.raw\.zst "
+    for seed in argo-workflows homelab kubeadm kubestellar mcp; do
+        check "${role}-2-install" "PROBE esp-seed=.* ${seed}_${v}\\.raw\\.zst "
+    done
     check "${role}-3-disk" "PROBE os=bluefin-server ${v} secureboot=enabled"
     check "${role}-3-disk" 'PROBE root=xfs ignition=applied'
     check "${role}-3-disk" 'PROBE failed=0'

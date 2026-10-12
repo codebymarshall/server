@@ -46,3 +46,16 @@ setup() {
     [ "${status}" -eq 0 ]
     [[ "${output}" == *"Bluefin Server is installed."* ]]
 }
+
+@test "Home Server describes nonroot owner login and never root password setup" {
+    export CREDENTIALS_DIRECTORY="${BATS_TEST_TMPDIR}/creds"
+    mkdir -p "${CREDENTIALS_DIRECTORY}"
+    printf 1 > "${CREDENTIALS_DIRECTORY}/bluefin.install-home-server"
+    BLUEFIN_INSTALLER_DONE_TIMEOUT=0 run bash "${SCRIPT}" < /dev/null
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"Bluefin Home Server is installed."* ]]
+    [[ "${output}" == *"nonroot owner"* ]]
+    [[ "${output}" == *"Homebrew is ready"* ]]
+    [[ "${output}" != *"new root"* ]]
+    [[ "${output}" != *"log in as root"* ]]
+}

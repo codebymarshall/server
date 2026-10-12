@@ -8,6 +8,8 @@ metadata:
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
+    - /websites/man7_linux_man-pages
+    - /nixos/patchelf
 ---
 # Image Build and Dogfood
 
@@ -44,6 +46,14 @@ the k0s/KubeStellar/OpenZFS sysext assets, the `efi-keys/` enrollment
 payloads, and a `SHA256SUMS` over all of it with its detached signature
 `SHA256SUMS.gpg` (signed in-element by `oci/bluefin-server-image.bst`). See
 [ddi-installer.md](ddi-installer.md) for what each artifact is.
+
+Home Server builds `homebrew/image.bst` through `fsdk-containers.bst`; the
+producer exports its independently pinned Brew machine, not host binaries.
+Keep the host and producer FSDK junctions explicitly duplicated in `project.conf`:
+their filesystems are packaged separately. Share the identical community-plugin
+junction through the consumer override; recheck its pins before changing that
+mapping. Text-only manual elements use `strip-binaries: ""`, matching
+`os-creds-prov.bst`, rather than adding a binary-stripping toolchain.
 
 To publish the set as an OCI artifact (one layer per file, tags `<version>`
 and `latest`, artifact type
@@ -122,6 +132,7 @@ DOGFOOD_INSTALL=console just dogfood-installer      # typed at the monitor: disk
 DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_NOISE=1 just dogfood-installer  # ...while the guest logs kernel and journal errors: none may reach the disk, summary or done screen
 DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_FAILURE=kernel just dogfood-installer  # ...but sysinstall fails on a missing disk UKI before any disk write: error on the monitor, machine up, journal kept
 DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_HOLD=8 just dogfood-installer  # ...holding each prompt on the monitor 8 s (2-8, default 3)
+DOGFOOD_PROFILE=home-server DOGFOOD_INSTALL=console just dogfood-installer # Home options, nonroot owner creation/login, SSH Brew and host-engine workloads
 ```
 
 `scripts/dogfood-installer.sh` recreates `DOGFOOD_STATE` (default
@@ -282,6 +293,11 @@ nodes may already trust.
 | "Reboot loops mean the boot hung." | With Secure Boot in setup mode the first boot enrolls keys and reboots; that is expected once per fresh variable store. |
 | "A failed update needs manual recovery." | Boot counting handles it: three failed boots of the new UKI and systemd-boot falls back to the previous image; `bluefin-boot-deadline` reboots a boot that comes up with a failed unit. `dogfood-install.sh <dir> <next> <broken>` proves it (`DOGFOOD_BROKEN=unit` for the failed-unit case). |
 | "`chmod 4755` in install-commands makes a file setuid in the image." | No. BuildStream artifacts keep one executable bit per file, so every staged file is 0644/0755. FSDK components declare their special modes as initial scripts, and `oci/bluefin-server-usr.bst` runs them (`os-initial-scripts.bst`) while assembling /sysroot; special modes must be set in the `script` element that writes the image. |
+| "Rootless engines need setuid added to `newuidmap`/`newgidmap`." | Keep FSDK's native 0755 + `cap_setuid=ep`/`cap_setgid=ep` from its initial scripts. Adding setuid changes the effective UID while file capabilities still limit privileges; the helper then cannot open the caller's `/proc/<pid>/{uid,gid}_map`. The real rootless workload tests, not a setuid-bit assertion, are the contract. |
+| "Private crun inherits the wrapper's loader environment." | Conmon sanitizes it. Set crun's RUNPATH to `$ORIGIN/../lib` and each private `libcrun.so*` to `$ORIGIN` in `runtimes/podman-runtime.bst`; retain the same pinned FSDK libraries privately. Verify `env -i /usr/lib/bluefin/podman/bin/crun --version` and a real rootless workload. |
+| "The seeded prefix can become owner-writable while root walks it." | Keep the copy behind a root-owned 0700 staging envelope until all privileged traversal finishes, then publish atomically. The real unprivileged-process regression must not transfer ownership of a host directory selected by a racing symlink. |
+| "A passing probe means the VM can be power-cut." | Sync after appended Home workloads, before the completion marker, then request native ACPI shutdown and await exit. Otherwise newly pulled OCI layer files can persist as empty files on the next boot. |
+| "Stop nspawn with the guest init signal." | The service's main process is the supervisor, not guest PID 1. Keep default SIGTERM with `KillMode=mixed`; nspawn sends the guest's orderly signal and cleans its exports. Sending SIGRTMIN+3 to the supervisor leaves mounts that block restart. |
 
 ## Red flags
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Select the Homebrew machine matching the booted host image
+Requires=bluefin-sysext-fetch.service
+After=bluefin-sysext-fetch.service
+Before=bluefin-homebrew-prepare.service
+RequiresMountsFor=/var/lib/machines
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/bluefin-homebrew-image %A
