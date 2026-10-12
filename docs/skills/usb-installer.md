@@ -4,7 +4,7 @@ description: The offline USB installer bluefin-server-installer_<ver>.raw. Load 
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-07"
+  last_updated: "2026-10-11"
   context7-sources:
     - /systemd/systemd
 ---
@@ -35,7 +35,9 @@ usrhash-derived UUIDs. Those UUIDs belong to installed usr slots, so an
 existing Bluefin install (including the disk being overwritten) is never
 opened as the installer's /usr, and an installed node booted with the stick
 still plugged in never opens the stick's usr. The installer is offline: its
-initrd masks `systemd-networkd-wait-online`, as the disk UKI already does.
+kernel command line masks `systemd-networkd-wait-online` in both initrd and
+userspace (`rd.systemd.mask=` and `systemd.mask=`), avoiding offline waits
+or wait-online failure messages during interactive prompts.
 
 `90-bluefin-installer-forget-partitions.rules` (udev, only when the kernel
 command line has `systemd.unit=system-install.target`) runs

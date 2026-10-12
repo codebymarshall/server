@@ -87,6 +87,15 @@ def test_the_keymap_is_answered_by_a_credential_on_the_kernel_command_line():
     assert "systemd.set_credential=firstboot.keymap:us" in cmdline
 
 
+def test_offline_installer_cmdline_masks_wait_online_in_initrd_and_userspace():
+    # An offline USB boot must not wait for or fail network-online during prompts.
+    cmdline = BOOT_ELEMENT.read_text(encoding="utf-8").split("installer-cmdline:")[1]
+    cmdline = cmdline.split("\nconfig:")[0]
+    words = cmdline.split()
+    assert "rd.systemd.mask=systemd-networkd-wait-online.service" in words
+    assert "systemd.mask=systemd-networkd-wait-online.service" in words
+
+
 def test_dogfood_only_adds_what_the_image_dropin_does_not_pass():
     # The unattended run re-uses the drop-in's ExecStart=, so repeating its
     # flags here would let the two drift apart unnoticed.

@@ -165,6 +165,24 @@ def test_homelab_entries_are_profiles_differing_only_by_a_non_secret_credential(
     assert "passphrase" not in text
 
 
+def test_all_three_installer_profiles_mask_userspace_wait_online() -> None:
+    text = BOOT.read_text(encoding="utf-8")
+    installer_words = boot_variable("installer-cmdline").split()
+    assert "rd.systemd.mask=systemd-networkd-wait-online.service" in installer_words
+    assert "systemd.mask=systemd-networkd-wait-online.service" in installer_words
+    # Homelab profiles derive directly from %{installer-cmdline}
+    assert re.search(
+        r'printf \'usrhash=%s %s %s systemd\.set_credential=bluefin\.install-homelab:%s\' \\\n'
+        r'\s+"\$\{usrhash\}" "%\{installer-cmdline\}" "%\{common-cmdline\}" "\$\{role\}"',
+        text,
+    )
+    # Netboot and disk UKIs do not have userspace wait-online masked
+    netboot_words = boot_variable("netboot-cmdline").split()
+    disk_words = boot_variable("disk-cmdline").split()
+    assert "systemd.mask=systemd-networkd-wait-online.service" not in netboot_words
+    assert "systemd.mask=systemd-networkd-wait-online.service" not in disk_words
+
+
 def test_the_stick_carries_the_templates_the_seed_and_the_esp_drop_in() -> None:
     text = IMAGE.read_text(encoding="utf-8")
     assert 'hl="${esp}/bluefin/homelab"' in text
