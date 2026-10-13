@@ -28,8 +28,8 @@ Pull requests merge through Prow (`.github/workflows/prow.yml`), not the merge b
   from accounts in `OWNERS`).
   With both `lgtm` and `approved` labels and passing checks, Prow adds the PR to the merge queue.
 - Use `/hold` to block merging and `/hold cancel` to release it. Add a `/kind` label to classify the PR.
-- `OWNERS` is copied from `projectbluefin/.project`'s `maintainers.yaml` and is not auto-synced:
-  update both together when the maintainer roster changes.
+- `OWNERS` is generated from `projectbluefin/.project`'s `maintainers.yaml` by its `sync-owners.yml`
+  workflow. Do not edit it here: change `maintainers.yaml` in `projectbluefin/.project`.
 - See [`docs/skills/ci-tooling.md`](docs/skills/ci-tooling.md) ("Workflow Structure") for the Prow jobs.
 
 ## References

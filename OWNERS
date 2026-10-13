@@ -1,5 +1,5 @@
-# Approver roster copied from projectbluefin/.project maintainers.yaml.
-# Not auto-synced: keep in step with maintainers.yaml manually.
+# Generated from projectbluefin/.project maintainers.yaml by sync-owners.yml.
+# Do not edit here: change maintainers.yaml in projectbluefin/.project.
 approvers:
   - ahmedadan
   - alatiera
