@@ -56,6 +56,7 @@ build-depends:
 - freedesktop-sdk.bst:components/dosfstools.bst
 - freedesktop-sdk.bst:components/findutils.bst
 - freedesktop-sdk.bst:components/mtools.bst
+- freedesktop-sdk.bst:components/sed.bst
 - freedesktop-sdk.bst:components/systemd.bst
 - filename: oci/bluefin-server-usr.bst
   config:
