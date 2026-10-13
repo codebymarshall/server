@@ -91,6 +91,28 @@ def test_os_stack_uses_fsdk_base():
 
 
 
+def test_image_assembly_declares_gzip_build_depend():
+    """bluefin-server-image.bst must build-depend on FSDK's gzip component.
+
+    Regression test for projectbluefin/server#459: sandbox integration runs
+    create-cracklib-dict (via /usr/bin/cracklib-format, a shell script that
+    pipes through gzip), but the element never declared gzip, so the build
+    logged "gzip: command not found". Same class of undeclared sandbox tool
+    as the sed regression (projectbluefin/server#456); keep it explicit here
+    too.
+    """
+    image = ELEMENTS_DIR / "oci" / "bluefin-server-image.bst"
+    assert image.exists()
+    assert "freedesktop-sdk.bst:components/gzip.bst" in _build_depends(
+        "oci/bluefin-server-image.bst"
+    ), (
+        "oci/bluefin-server-image.bst runs cracklib-format during sandbox "
+        "integration but does not build-depend on "
+        "freedesktop-sdk.bst:components/gzip.bst "
+        "(projectbluefin/server#459)"
+    )
+
+
 def test_os_countme_depends_on_curl_and_jq():
     """os-countme.bst must ship curl and jq through the freedesktop-sdk junction.
 

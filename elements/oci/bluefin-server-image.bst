@@ -55,6 +55,7 @@ build-depends:
 - freedesktop-sdk.bst:public-stacks/runtime-gnu.bst
 - freedesktop-sdk.bst:components/dosfstools.bst
 - freedesktop-sdk.bst:components/findutils.bst
+- freedesktop-sdk.bst:components/gzip.bst
 - freedesktop-sdk.bst:components/mtools.bst
 - freedesktop-sdk.bst:components/sed.bst
 - freedesktop-sdk.bst:components/systemd.bst
