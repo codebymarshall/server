@@ -24,9 +24,10 @@ Thanks for contributing. This repository is optimized for AI coding agents first
 
 Pull requests merge through Prow (`.github/workflows/prow.yml`), not the merge button:
 
-- Any reviewer comments `/lgtm`; an approver listed in [`OWNERS`](OWNERS) comments `/approve`.
+- An approver listed in [`OWNERS`](OWNERS) comments `/lgtm` and `/approve` (Prow accepts both only
+  from accounts in `OWNERS`).
   With both `lgtm` and `approved` labels and passing checks, Prow adds the PR to the merge queue.
-- Use `/hold` to block merging and `/hold cancel` to release it. Add a `/kind` label; until then Prow marks the PR `needs-kind`.
+- Use `/hold` to block merging and `/hold cancel` to release it. Add a `/kind` label to classify the PR.
 - `OWNERS` is copied from `projectbluefin/.project`'s `maintainers.yaml` and is not auto-synced:
   update both together when the maintainer roster changes.
 - See [`docs/skills/ci-tooling.md`](docs/skills/ci-tooling.md) ("Workflow Structure") for the Prow jobs.
