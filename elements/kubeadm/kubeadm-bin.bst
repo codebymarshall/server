@@ -46,12 +46,12 @@ sources:
   directory: crictl
 - kind: tar
   url: github:containerd/containerd/releases/download/v%{containerd-version}/containerd-static-%{containerd-version}-linux-amd64.tar.gz
-  ref: 9389a4bff0112258bd953c66382709c2a4a11e25e376c8c4c7075b39de156882
+  ref: d52dec99dd13e63c6a24f292936c15f929ad826be1ce39d7a77a3d840b1a2299
   base-dir: bin
   directory: containerd
 - kind: remote
   url: github:opencontainers/runc/releases/download/v%{runc-version}/runc.amd64
-  ref: 8781ab9f71c12f314d21c8e85f13ca1a82d90cf475aa5131a7b543fcc5487543
+  ref: 3f3921dbbee7723e9868f97e88e51ffc910206e3ba55646e74d93d24ea76023c
   directory: runc
 - kind: tar
   url: github:containernetworking/plugins/releases/download/v%{cni-plugins-version}/cni-plugins-linux-amd64-v%{cni-plugins-version}.tgz
@@ -81,12 +81,12 @@ sources:
       directory: crictl
     - kind: tar
       url: github:containerd/containerd/releases/download/v%{containerd-version}/containerd-static-%{containerd-version}-linux-arm64.tar.gz
-      ref: d1a1e64c4334e17d6f9f40093d5ff9f810b95ac34c7dcba55e7d2226d2a8ab79
+      ref: f0e77d2bd29c6a4a463c593b3e9e39ce31b830ff572aba98ea544aa3b8f08be7
       base-dir: bin
       directory: containerd
     - kind: remote
       url: github:opencontainers/runc/releases/download/v%{runc-version}/runc.arm64
-      ref: 3c9a8e9e6dafd00db61f4611692447ebab4a56388bae4f82192aed67b66df712
+      ref: 6be27a061ef89bb14c6cb495405bba80f46cea213b8f79378a6086b1bac6b747
       directory: runc
     - kind: tar
       url: github:containernetworking/plugins/releases/download/v%{cni-plugins-version}/cni-plugins-linux-arm64-v%{cni-plugins-version}.tgz

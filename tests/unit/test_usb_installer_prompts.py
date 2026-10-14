@@ -14,6 +14,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 from _systemd import SystemdFile, preset
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,6 +45,11 @@ def option(argv: list[str], name: str) -> str | None:
         if key == name:
             return value
     return None
+
+
+
+def test_sysinstall_mutes_console():
+    assert option(install_argv(), "--mute-console") == "yes"
 
 
 def test_the_disk_is_erased_without_a_keep_or_erase_question():
@@ -85,6 +92,32 @@ def test_the_keymap_is_answered_by_a_credential_on_the_kernel_command_line():
     cmdline = BOOT_ELEMENT.read_text(encoding="utf-8").split("installer-cmdline:")[1]
     cmdline = cmdline.split("\nconfig:")[0]
     assert "systemd.set_credential=firstboot.keymap:us" in cmdline
+
+
+def test_offline_installer_cmdline_masks_wait_online_in_initrd_and_userspace():
+    # An offline USB boot must not wait for or fail network-online during prompts.
+    cmdline = BOOT_ELEMENT.read_text(encoding="utf-8").split("installer-cmdline:")[1]
+    cmdline = cmdline.split("\nconfig:")[0]
+    words = cmdline.split()
+    assert "rd.systemd.mask=systemd-networkd-wait-online.service" in words
+    assert "systemd.mask=systemd-networkd-wait-online.service" in words
+
+
+def boot_cmdline(name: str) -> list[str]:
+    return yaml.safe_load(BOOT_ELEMENT.read_text(encoding="utf-8"))["variables"][name].split()
+
+
+def test_only_the_installer_boots_quietly():
+    # Boot messages stay off the installer's prompts, and once sysinstall's
+    # own mute exits, systemd.show_status=error is what keeps start-up status
+    # lines off the done screen (bluefin-installer-mute-console.service).
+    installer = boot_cmdline("installer-cmdline")
+    for word in ("quiet", "loglevel=4", "systemd.show_status=error"):
+        assert word in installer, word
+    # Netboot and installed boots keep their boot messages on the console;
+    # common-cmdline goes into every UKI.
+    for name in ("common-cmdline", "netboot-cmdline", "disk-cmdline"):
+        assert "quiet" not in boot_cmdline(name), name
 
 
 def test_dogfood_only_adds_what_the_image_dropin_does_not_pass():

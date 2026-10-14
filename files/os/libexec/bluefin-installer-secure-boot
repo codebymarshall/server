@@ -169,7 +169,7 @@ summary() {
 
 explain() {
     # A clean screen: boot messages above would push the warning off it.
-    [ ! -t 1 ] || printf '\033[H\033[2J'
+    [ ! -t 1 ] || printf '\033[H\033[2J\033[3J'
     say "=== Bluefin Server: Secure Boot is required ===" ""
     say "This machine is not ready to run Bluefin Server with Secure Boot:" "  $(summary "$1")." ""
     say "Bluefin Server boots only signed code: the firmware checks systemd-boot" \

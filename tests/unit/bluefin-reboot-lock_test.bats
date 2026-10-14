@@ -3,8 +3,9 @@
 # Unit tests for files/os/update-check/usr/libexec/bluefin-reboot-lock.
 #
 # curl and systemd-id128 are stubs on PATH. The curl stub stands in for the
-# FleetLock server: it records its arguments (one per line) in CURL_ARGS and
-# answers with REPLY_BODY and HTTP status REPLY_CODE, the way the client's
+# FleetLock server: it records its arguments (one per line) in CURL_ARGS, the
+# config it reads from stdin (`-K -`, which carries the URL) in CURL_CONFIG,
+# and answers with REPLY_BODY and HTTP status REPLY_CODE, the way the client's
 # `-w '\n%{http_code}'` prints them; CURL_EXIT makes the transfer itself fail.
 
 setup() {
@@ -14,11 +15,18 @@ setup() {
     CONF="${BATS_TEST_TMPDIR}/reboot-lock.conf"
     CREDS="${BATS_TEST_TMPDIR}/credentials"
     export CURL_ARGS="${BATS_TEST_TMPDIR}/curl.args"
+    export CURL_CONFIG="${BATS_TEST_TMPDIR}/curl.config"
     mkdir -p "${STUB_DIR}" "${CREDS}"
 
     cat > "${STUB_DIR}/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "${CURL_ARGS}"
+: > "${CURL_CONFIG}"
+prev=""
+for a in "$@"; do
+    [ "${prev}" = -K ] && [ "${a}" = - ] && cat > "${CURL_CONFIG}"
+    prev="${a}"
+done
 if [ "${CURL_EXIT:-0}" != 0 ]; then
     echo "curl: (7) Failed to connect" >&2
     printf '\n000'
@@ -44,6 +52,11 @@ arg() {
     awk -v flag="$1" 'prev == flag { print; exit } { prev = $0 }' "${CURL_ARGS}"
 }
 
+# The URL curl was given through its stdin config.
+url() {
+    sed -n 's/^url = "\(.*\)"$/\1/p' "${CURL_CONFIG}"
+}
+
 @test "without a server both verbs do nothing and succeed" {
     lock acquire
     [ "${status}" -eq 0 ]
@@ -66,7 +79,7 @@ arg() {
     lock acquire
     [ "${status}" -eq 0 ]
     [[ "${output}" == *"holding a reboot slot on https://fleetlock.example/base"* ]]
-    [ "$(tail -n 1 "${CURL_ARGS}")" = "https://fleetlock.example/base/v1/pre-reboot" ]
+    [ "$(url)" = "https://fleetlock.example/base/v1/pre-reboot" ]
     grep -qx 'fleet-lock-protocol: true' "${CURL_ARGS}"
     [ "$(arg --data-binary)" = '{"client_params":{"id":"0123456789abcdef0123456789abcdef","group":"default"}}' ]
     [ "$(arg --proto)" = "=http,https" ]
@@ -78,7 +91,7 @@ arg() {
     lock release
     [ "${status}" -eq 0 ]
     [[ "${output}" == *"released the reboot slot"* ]]
-    [ "$(tail -n 1 "${CURL_ARGS}")" = "http://fleetlock.example/v1/steady-state" ]
+    [ "$(url)" = "http://fleetlock.example/v1/steady-state" ]
     [ "$(arg --data-binary)" = '{"client_params":{"id":"0123456789abcdef0123456789abcdef","group":"db-1"}}' ]
 }
 
@@ -128,8 +141,12 @@ arg() {
     [ "${status}" -eq 0 ]
     [[ "${output}" == *"holding a reboot slot on https://fleetlock.example/base ("* ]]
     [[ "${output}" != *secret* ]]
-    # The request itself still carries them.
-    [ "$(tail -n 1 "${CURL_ARGS}")" = "https://user:secret@fleetlock.example/base/v1/pre-reboot" ]
+    # The request itself still carries them, through curl's stdin config, so
+    # the command line (/proc/<pid>/cmdline, readable by every local user)
+    # does not.
+    ! grep -q secret "${CURL_ARGS}"
+    ! grep -qE '^https?://' "${CURL_ARGS}"
+    [ "$(url)" = "https://user:secret@fleetlock.example/base/v1/pre-reboot" ]
 
     REPLY_CODE=409 lock acquire
     [ "${status}" -eq 1 ]
@@ -163,13 +180,41 @@ arg() {
     done
 }
 
+@test "credentials on a plain http URL are sent, with a warning" {
+    printf 'URL=http://user:secret@fleetlock.example/\n' > "${CONF}"
+    lock acquire
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"<4>FleetLock URL http://fleetlock.example carries credentials over plain http"* ]]
+    [[ "${output}" != *secret* ]]
+    [ "$(url)" = "http://user:secret@fleetlock.example/v1/pre-reboot" ]
+
+    printf 'URL=https://user:secret@fleetlock.example/\n' > "${CONF}"
+    lock acquire
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"plain http"* ]]
+
+    printf 'URL=http://fleetlock.example/\n' > "${CONF}"
+    lock acquire
+    [ "${status}" -eq 0 ]
+    [[ "${output}" != *"plain http"* ]]
+}
+
+@test "the URL is quoted for curl's config" {
+    # Backslash and double quote are the two characters curl's config quoting
+    # escapes; the stub records the config verbatim.
+    printf 'URL=https://user:p\"a\\ss@fleetlock.example\n' > "${CONF}"
+    lock acquire
+    [ "${status}" -eq 0 ]
+    [ "$(cat "${CURL_CONFIG}")" = 'url = "https://user:p\"a\\ss@fleetlock.example/v1/pre-reboot"' ]
+}
+
 @test "credentials override the config file" {
     printf 'URL=https://file.example\nGROUP=file\n' > "${CONF}"
     printf 'https://cred.example\n' > "${CREDS}/bluefin.reboot-lock.url"
     printf 'workers\n' > "${CREDS}/bluefin.reboot-lock.group"
     lock acquire
     [ "${status}" -eq 0 ]
-    [ "$(tail -n 1 "${CURL_ARGS}")" = "https://cred.example/v1/pre-reboot" ]
+    [ "$(url)" = "https://cred.example/v1/pre-reboot" ]
     [[ "$(arg --data-binary)" == *'"group":"workers"'* ]]
 }
 

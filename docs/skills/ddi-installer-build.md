@@ -4,7 +4,7 @@ description: Build, export, and dogfood the Bluefin Server image set (OS DDI, si
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-10-07"
+  last_updated: "2026-10-11"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -119,7 +119,16 @@ just dogfood-installer NEXT=<dir> # ...then failed checks on the banner, sysupda
 DOGFOOD_TARGET=prior-install just dogfood-installer  # ...then install again over that install and boot it
 DOGFOOD_TARGET=foreign-gpt just dogfood-installer    # install over another OS's GPT disk (also: ext4, xfs on the whole disk)
 DOGFOOD_INSTALL=console just dogfood-installer      # typed at the monitor: disk by number, "installed" screen, root password and tty1 login
+DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_NOISE=1 just dogfood-installer  # ...while the guest logs kernel and journal errors: none may reach the disk, summary or done screen
+DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_FAILURE=kernel just dogfood-installer  # ...but sysinstall fails on a missing disk UKI before any disk write: error on the monitor, machine up, journal kept
+DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_HOLD=8 just dogfood-installer  # ...holding each prompt on the monitor 8 s (2-8, default 3)
 ```
+
+`scripts/dogfood-installer.sh` recreates `DOGFOOD_STATE` (default
+`dist/dogfood-installer`) on every run; use a disposable path. Any
+`systemd.unit-dropin.systemd-sysinstall.service` credential makes an install
+unattended and skips the disk question; never use one to instrument an
+attended run.
 
 `scripts/dogfood-diskless.sh <dir> [--check]` boots the way a PXE/HTTP-booted
 node would: signed systemd-boot -> signed netboot UKI -> initrd pulls

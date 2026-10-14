@@ -17,8 +17,10 @@ description: |
     efi-keys/{PK,KEK,db}.auth         Secure Boot enrollment payloads
     repart.d/                         disk layout: ESP, usr A/B + verity, root.
                                       Slot A is copied from the running image
-                                      (CopyBlocks=auto) with the UUIDs dm-verity
-                                      derives from usrhash, for
+                                      (CopyBlocks=auto; rewritten to explicit
+                                      loop partitions in the OS DDI's ESP copy)
+                                      with the UUIDs dm-verity derives from
+                                      usrhash, for
                                       systemd-sysinstall --definitions=
 
   All three pin usrhash= of the same /usr image and are signed with DB, so
@@ -98,8 +100,10 @@ variables:
   # The installer medium opens its own usr/verity by partition label, not by
   # the usrhash-derived UUIDs: those belong to installed usr slots, so an
   # existing install (or the disk being installed) is never picked up as the
-  # installer's /usr. The installer is offline: the initrd must not wait for
-  # network-online (no limit; netboot needs it, the installer never does).
+  # installer's /usr. The installer is offline: neither the initrd nor the
+  # booted stick may wait for network-online (netboot needs it, the
+  # installer never does; the userspace wait would fail after ~2 min and
+  # print over the sysinstall prompt).
   # tty0 comes last so /dev/console, where systemd-sysinstall.service draws
   # its interface, is the monitor. firstboot.keymap is a well-known
   # systemd-firstboot credential: with it set, firstboot does not ask for a
@@ -109,12 +113,12 @@ variables:
     systemd.verity_usr_data=/dev/disk/by-partlabel/bluefin-installer-usr
     systemd.verity_usr_hash=/dev/disk/by-partlabel/bluefin-installer-usr-verity
     rd.systemd.mask=systemd-repart.service systemd.mask=systemd-repart.service
-    rd.systemd.mask=systemd-networkd-wait-online.service
+    rd.systemd.mask=systemd-networkd-wait-online.service systemd.mask=systemd-networkd-wait-online.service
     systemd.mask=boot.automount systemd.mask=boot.mount
     systemd.unit=system-install.target
     systemd.setenv=BLUEFIN_INSTALL_KERNEL=/run/bluefin/installer/bluefin/bluefin-server-%{image-version}.efi
     systemd.set_credential=firstboot.keymap:us
-    console=ttyS0,115200 console=tty0
+    quiet loglevel=4 systemd.show_status=error console=ttyS0,115200 console=tty0
 
 # Transitional, netboot UKI only: bluefin.ignition.allow-unsigned lets a
 # node apply an unsigned bluefin-node.ign (a 404 for bluefin-node.ign.gpg)

@@ -153,8 +153,10 @@ refuses an unsigned config; a local build can do the same.
 
 Setting `doInstall` in the node's Booty config boots it into
 `booty-install.service`, which runs `systemd-sysinstall` against the local
-disk. Without Booty, write `bluefin-server-netboot_<ver>.esp.raw` to a USB
-stick and place an `import.pull.cred` credential in `/loader/credentials/`
+disk. The DDI's `bluefin/repart.d` copies directly from the `rootdisk.raw` loop
+partitions, so installation succeeds even when extensions (such as ZFS) are
+merged at boot. Without Booty, write `bluefin-server-netboot_<ver>.esp.raw` to a
+USB stick and place an `import.pull.cred` credential in `/loader/credentials/`
 specifying the URL to pull.
 
 ## kubeadm workers

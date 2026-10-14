@@ -66,14 +66,17 @@ def test_patch_applies_after_0006() -> None:
     import subprocess
     import tempfile
 
-    # Build a synthetic fdsdk-config.sh: 2809 filler lines + the original
-    # 3-line EOF block (matching 0006's pre-context).  Apply 0006, then
-    # `git apply --check` 0007 against the modified tree — exactly what
-    # bst-plugins-community's `patch_queue.stage` does.
+    # Build a synthetic fdsdk-config.sh: 2809 filler lines + the 6-line EOF
+    # block FSDK 26.08.2 ships (its last 3 lines are 0006's pre-context).
+    # Apply 0006, then `git apply --check` 0007 against the modified tree —
+    # exactly what bst-plugins-community's `patch_queue.stage` does.
     body = "\n".join(f"line {i}" for i in range(1, 2810)) + (
         "\nif has HAVE_ARCH_TRANSPARENT_HUGEPAGE; then\n"
         "    enable TRANSPARENT_HUGEPAGE\n"
         "fi\n"
+        "\n"
+        "# Needed and/or helpful for graphics and multimedia (e.g. libcamera and mesa).\n"
+        "enable UDMABUF\n"
     )
     with tempfile.TemporaryDirectory() as tmp:
         tree = Path(tmp) / "fsdk"
@@ -101,13 +104,17 @@ def test_patch_applies_after_0006() -> None:
             f"0006 does not apply on the synthetic tree:\n{result.stderr}"
         )
         result = subprocess.run(
-            ["git", "apply", "--check", str(patch7)],
+            ["git", "apply", "--check", "-v", str(patch7)],
             cwd=tree, capture_output=True, text=True,
         )
         assert result.returncode == 0, (
             "0007 does not apply on top of 0006 — the second hunk in the\n"
             "patch_queue stack fails, which makes the entire kernel build\n"
             f"fail at source staging.  stderr:\n{result.stderr}"
+        )
+        assert "offset" not in result.stderr, (
+            "0007's hunk header is stale relative to 0006 and only applies\n"
+            f"via offset tolerance.  stderr:\n{result.stderr}"
         )
 
 

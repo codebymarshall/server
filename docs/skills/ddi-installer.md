@@ -184,7 +184,9 @@ boot flow, unattended installs, and install-time provisioning.
 ### From a diskless node
 
 A running diskless node is also an installer. The OS DDI's ESP partition is
-mounted at `/run/bluefin/boot` (`run-bluefin-boot.mount`):
+mounted at `/run/bluefin/boot` (`run-bluefin-boot.mount`), and its
+`bluefin/repart.d` copies `usr` and `usr-verity` block-for-block from the
+in-RAM DDI partitions (`/dev/disk/by-loop-ref/rootdisk.raw-part1` and `part2`):
 
 ```bash
 systemctl start run-bluefin-boot.mount
@@ -192,6 +194,13 @@ kernel="$(ls /run/bluefin/boot/EFI/Linux/bluefin-server-[0-9]*.efi)"
 systemd-sysinstall --kernel="${kernel}" \
     --definitions=/run/bluefin/boot/bluefin/repart.d /dev/sdX
 ```
+
+On older image builds whose `repart.d` used `CopyBlocks=auto`, active system
+extensions (`systemd-sysext`, e.g. ZFS or k0s) turn `/usr` into an overlayfs,
+causing `systemd-repart` to fail with "Failed to resolve automatic CopyBlocks=
+path for partition type usr". Unmerging extensions first (`systemd-sysext
+unmerge`) restores `/usr` to the underlying dm-verity block device and allows
+sysinstall to succeed.
 
 ## Updates
 
