@@ -368,7 +368,10 @@ hold_console() {
             ! printf '%s\n' "${screen}" | grep -qE 'systemd-gpt-auto-generator|No root/usr partition|failed with exit status|Failed to preset' \
                 || fail "${name}: early boot generator/preset errors remain above the disk chooser"
         fi
-        if [ "${phase}" != failure ]; then
+        # systemd-mute-console notifies READY before the kernel loglevel
+        # drops, so the first frame can still show the old printk value with
+        # mute=active; only a later frame proves the console is not muted.
+        if [ "${phase}" != failure ] && [ "${samples}" -ge 1 ]; then
             printf '%s\n' "${proof}" | grep -qE 'printk=0 mute=active ' \
                 || fail "${name}: console is not muted at ${phase}: ${proof}"
         fi
