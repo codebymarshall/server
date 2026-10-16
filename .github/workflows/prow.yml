@@ -12,7 +12,9 @@ name: Prow
 on:
   issues:
     types: [opened, reopened, labeled, unlabeled]
-  issue_comment:
+  # issue_comment is dangerous when a workflow runs code from the commented pull request; the
+  # reusable workflow only reads the comment body and checks out cncf/prow-github-actions.
+  issue_comment: # zizmor: ignore[dangerous-triggers] safe: does not check out or run untrusted PR code
     types: [created]
   # pull_request_target, not pull_request: fork pull requests get a write token, so they can be
   # labeled and merged too. This is safe because nothing here checks out or runs pull request
