@@ -20,6 +20,18 @@ Thanks for contributing. This repository is optimized for AI coding agents first
 9. Remove any TODO or work-in-progress markers before opening a PR.
 10. Target `main`. Keep branches local until ready; no WIP PRs.
 
+## Review and merge
+
+Pull requests merge through Prow (`.github/workflows/prow.yml`), not the merge button:
+
+- An approver listed in [`OWNERS`](OWNERS) comments `/lgtm` and `/approve` (Prow accepts both only
+  from accounts in `OWNERS`).
+  With both `lgtm` and `approved` labels and passing checks, Prow adds the PR to the merge queue.
+- Use `/hold` to block merging and `/hold cancel` to release it. Add a `/kind` label to classify the PR.
+- `OWNERS` is generated from `projectbluefin/.project`'s `maintainers.yaml` by its `sync-owners.yml`
+  workflow. Do not edit it here: change `maintainers.yaml` in `projectbluefin/.project`.
+- See [`docs/skills/ci-tooling.md`](docs/skills/ci-tooling.md) ("Workflow Structure") for the Prow jobs.
+
 ## References
 
 - [`AGENTS.md`](AGENTS.md) — root entry point, hard rules, build matrix, and boundaries.
