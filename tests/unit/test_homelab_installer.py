@@ -24,7 +24,7 @@ BOOT = ROOT / "elements" / "oci" / "bluefin-server-boot.bst"
 IMAGE = ROOT / "elements" / "oci" / "bluefin-server-image.bst"
 CREDS_ELEMENT = ROOT / "elements" / "bluefin-server" / "os-creds-prov.bst"
 REPART = ROOT / "files" / "os" / "repart.d"
-FETCH = ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-sysext-fetch"
+FETCH = ROOT / "files" / "homelab" / "cluster" / "internal" / "host" / "sysextfetch" / "sysextfetch.go"
 STICK = "/run/bluefin/installer/bluefin/homelab"
 ENV_FILE = "/run/bluefin-homelab-install/sysinstall.env"
 
@@ -197,5 +197,5 @@ def test_the_stick_carries_the_templates_the_seed_and_the_esp_drop_in() -> None:
     copy = f"CopyFiles={STICK}/extensions:/bluefin/extensions"
     assert f"printf '[Partition]\\n{copy}\\n'" in text
     # ...where bluefin-sysext-fetch looks for it on the installed disk.
-    assert 'seed="${esp:+${esp%/}/bluefin/extensions}"' in FETCH.read_text(encoding="utf-8")
+    assert 'seed = strings.TrimSuffix(esp, "/") + "/bluefin/extensions"' in FETCH.read_text(encoding="utf-8")
     assert "SizeMinBytes=512M" in text

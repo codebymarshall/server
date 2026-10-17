@@ -1,11 +1,11 @@
 """bluefin-sysext-fetch: installs the sysexts of the enabled sysupdate
 features for the booted version, from the installer's seed, the boot server
-or the release, and merges them. Run against stub systemd tools."""
+or the release, and merges them. Runs bluefin-host's bluefin-sysext-fetch
+against stub systemd tools."""
 
 from __future__ import annotations
 
 import os
-import stat
 import subprocess
 from pathlib import Path
 
@@ -14,7 +14,6 @@ import pytest
 from _systemd import SystemdFile, preset
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-sysext-fetch"
 UNIT = ROOT / "files" / "os" / "systemd" / "system" / "bluefin-sysext-fetch.service"
 SYSUPDATE = ROOT / "files" / "os" / "sysupdate.d"
 PRESETS = sorted((ROOT / "files" / "os" / "systemd" / "system-preset").glob("*.preset"))
@@ -48,8 +47,9 @@ def write(path: Path, text: str, mode: int = 0o644) -> Path:
 
 
 class Node:
-    def __init__(self, tmp: Path) -> None:
+    def __init__(self, tmp: Path, host_bin: Path) -> None:
         self.tmp = tmp
+        self.helper = host_bin / "bluefin-sysext-fetch"
         self.etc = tmp / "etc-sysupdate.d"
         self.usr = tmp / "usr-sysupdate.d"
         self.ext = tmp / "var-lib-extensions"
@@ -102,7 +102,7 @@ class Node:
 
     def run(self, **env: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["bash", str(SCRIPT)], env={**self.env, **env}, capture_output=True, text=True, check=False
+            [str(self.helper)], env={**self.env, **env}, capture_output=True, text=True, check=False
         )
 
     def calls(self) -> list[str]:
@@ -113,8 +113,8 @@ class Node:
 
 
 @pytest.fixture
-def node(tmp_path: Path) -> Node:
-    return Node(tmp_path)
+def node(tmp_path: Path, host_bin: Path) -> Node:
+    return Node(tmp_path, host_bin)
 
 
 MERGED = [
@@ -147,6 +147,12 @@ def test_installer_seed_installs_offline_and_is_removed(node: Node) -> None:
     assert result.returncode == 0, result.stderr
     assert node.installed() == [f"homelab_{VERSION}.raw", f"kubeadm_{VERSION}.raw"]
     assert node.calls() == [f"systemd-sysupdate --definitions={node.tmp}/run/seed update", *MERGED]
+    # scripts/dogfood-homelab-*.sh read the last line from the journal.
+    assert result.stdout.splitlines() == [
+        f"bluefin-sysext-fetch: fetching for {VERSION}: kubeadm_{VERSION}.raw homelab_{VERSION}.raw ",
+        f"bluefin-sysext-fetch: installing from the installer's copy in {seed}/",
+        f"bluefin-sysext-fetch: merged the homelab kubeadm sysext(s) for {VERSION} (seed)",
+    ]
     assert not seed.exists()
     for name in ("32-kubeadm.transfer", "35-homelab.transfer"):
         transfer = SystemdFile(node.capture / name)
@@ -225,4 +231,3 @@ def test_unit_runs_once_per_version_before_activation() -> None:
 
 def test_unit_is_opt_in() -> None:
     assert preset("bluefin-sysext-fetch.service", PRESETS) == "disable"
-    assert SCRIPT.stat().st_mode & stat.S_IXUSR

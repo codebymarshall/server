@@ -1,4 +1,4 @@
-"""Executed coverage for the diskless update signal.
+"""Executed coverage for the diskless update signal (bluefin-host).
 
 bluefin-boot-origin finds the URL a node booted from; bluefin-diskless-update-check
 fetches the signed SHA256SUMS from that directory and flags /run/reboot-required
@@ -13,7 +13,6 @@ import configparser
 import functools
 import os
 import shutil
-import stat
 import subprocess
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -23,16 +22,14 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-ORIGIN = ROOT / "files" / "boot-origin" / "usr" / "libexec" / "bluefin-boot-origin"
-CHECK = ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-diskless-update-check"
 RUNNING = "26.09.2"
 PULL = "raw,machine,verify=signature,blockdev:rootdisk:{url}"
 
 UNITS = ROOT / "files" / "os" / "systemd" / "system"
 ELEMENTS = ROOT / "elements" / "bluefin-server"
 needs_tools = pytest.mark.skipif(
-    not all(shutil.which(t) for t in ("curl", "gpg", "gpgv", "systemd-analyze")),
-    reason="needs curl, gpg, gpgv and systemd-analyze",
+    not all(shutil.which(t) for t in ("gpg", "gpgv", "systemd-analyze")),
+    reason="needs gpg, gpgv and systemd-analyze",
 )
 
 
@@ -55,17 +52,15 @@ def test_check_runs_only_on_diskless_boots() -> None:
     assert timer["Install"]["WantedBy"] == "timers.target"
 
 
-def test_check_ships_in_the_os_and_is_executable_bash() -> None:
+def test_check_ships_in_the_os_as_a_bluefin_host_link() -> None:
     stack = yaml.safe_load((ELEMENTS / "os-stack.bst").read_text(encoding="utf-8"))["depends"]
-    assert "bluefin-server/os-update-check.bst" in stack
-    assert "bluefin-server/boot-origin.bst" in stack
-    doc = yaml.safe_load((ELEMENTS / "os-update-check.bst").read_text(encoding="utf-8"))
-    assert doc["kind"] == "import"
-    assert doc["sources"] == [{"kind": "local", "path": "files/os/update-check"}]
-    assert "target" not in (doc.get("config") or {}), "the tree mirrors /usr"
-    assert CHECK.read_text(encoding="utf-8").startswith("#!/usr/bin/bash\n")
-    assert CHECK.stat().st_mode & stat.S_IXUSR
-    subprocess.run(["bash", "-n", str(CHECK)], check=True)
+    assert "bluefin-server/os-host.bst" in stack
+    # The initrd's shell copy of bluefin-boot-origin stays out of /usr:
+    # bluefin-host's link replaces it there.
+    assert "bluefin-server/boot-origin.bst" not in stack
+    install = "\n".join(yaml.safe_load((ELEMENTS / "os-host.bst").read_text(encoding="utf-8"))["config"]["install-commands"])
+    for helper in ("diskless-update-check", "boot-origin"):
+        assert helper in install
 
 
 @pytest.fixture(scope="module")
@@ -135,7 +130,7 @@ PINNED_RAW = f"bluefin-server_{RUNNING}.raw"
 NETBOOT_UKI = "bluefin-server-netboot.efi"
 
 
-def check(tmp_path: Path, url: str | None, keyring: Path, *, via: str = "stub", file: str = NETBOOT_UKI):
+def check(tmp_path: Path, host_bin: Path, url: str | None, keyring: Path, *, via: str = "stub", file: str = NETBOOT_UKI):
     """Run the check with the boot origin <url>/<file> handed over <via>:
     "cmdline" (rd.systemd.pull=), "cred" (the import.pull credential) or
     "stub" (the StubDeviceURL EFI variable of a UEFI HTTP boot)."""
@@ -143,9 +138,10 @@ def check(tmp_path: Path, url: str | None, keyring: Path, *, via: str = "stub", 
     os_release.write_text(f'ID=bluefin-server\nIMAGE_ID=bluefin-server\nIMAGE_VERSION="{RUNNING}"\n', encoding="utf-8")
     sentinel = tmp_path / "run" / "reboot-required"
     pull = PULL.format(url=f"{url}/{file}") if url else ""
+    # BLUEFIN_BOOT_ORIGIN unset: the check finds the origin in-process, as
+    # on a node.
     env = dict(
         os.environ,
-        BLUEFIN_BOOT_ORIGIN=str(ORIGIN),
         BLUEFIN_IMPORT_KEYRING=str(keyring),
         BLUEFIN_REBOOT_SENTINEL=str(sentinel),
         BLUEFIN_OS_RELEASE=str(os_release),
@@ -153,6 +149,7 @@ def check(tmp_path: Path, url: str | None, keyring: Path, *, via: str = "stub", 
         BLUEFIN_CMDLINE=str(tmp_path / "cmdline"),
     )
     env.pop("CREDENTIALS_DIRECTORY", None)
+    env.pop("BLUEFIN_BOOT_ORIGIN", None)
     cmdline = "root=tmpfs"
     if url and via == "cred":
         (tmp_path / "creds").mkdir()
@@ -166,7 +163,7 @@ def check(tmp_path: Path, url: str | None, keyring: Path, *, via: str = "stub", 
     elif url:
         cmdline = "rd.systemd.pull=" + pull
     (tmp_path / "cmdline").write_text(cmdline + "\n", encoding="utf-8")
-    result = subprocess.run([str(CHECK)], capture_output=True, text=True, env=env, timeout=120)
+    result = subprocess.run([str(host_bin / "bluefin-diskless-update-check")], capture_output=True, text=True, env=env, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr
     return sentinel.exists(), result.stdout + result.stderr
 
@@ -182,11 +179,11 @@ def check(tmp_path: Path, url: str | None, keyring: Path, *, via: str = "stub", 
         ("cmdline", "bluefin-server.raw"),
     ],
 )
-def test_newer_release_sets_the_flag(tmp_path: Path, server, keys, via: str, file: str) -> None:
+def test_newer_release_sets_the_flag(tmp_path: Path, host_bin: Path, server, keys, via: str, file: str) -> None:
     directory, url = server
     # 26.09.10 sorts after 26.09.2 as a version, not as a string.
     publish(directory, "26.09.10", keys["release"])
-    flagged, log = check(tmp_path, url, keys["release-ring"], via=via, file=file)
+    flagged, log = check(tmp_path, host_bin, url, keys["release-ring"], via=via, file=file)
     assert flagged, log
     assert f"<5>Bluefin Server 26.09.10 is available from {url}/ (running {RUNNING}); flagged" in log
 
@@ -200,12 +197,12 @@ def test_newer_release_sets_the_flag(tmp_path: Path, server, keys, via: str, fil
         ("stub", f"bluefin-server-netboot_{RUNNING}.efi"),
     ],
 )
-def test_newer_release_on_a_pinned_origin_sets_no_flag(tmp_path: Path, server, keys, via: str, file: str) -> None:
+def test_newer_release_on_a_pinned_origin_sets_no_flag(tmp_path: Path, host_bin: Path, server, keys, via: str, file: str) -> None:
     # The directory holds both releases; the origin names the running one, so
     # a reboot would pull it again and kured would drain the node every check.
     directory, url = server
     publish(directory, "26.09.10", keys["release"], also=(RUNNING,))
-    flagged, log = check(tmp_path, url, keys["release-ring"], via=via, file=file)
+    flagged, log = check(tmp_path, host_bin, url, keys["release-ring"], via=via, file=file)
     assert not flagged, log
     assert (
         f"<5>Bluefin Server 26.09.10 is available from {url}/ (running {RUNNING}), "
@@ -215,52 +212,52 @@ def test_newer_release_on_a_pinned_origin_sets_no_flag(tmp_path: Path, server, k
 
 @needs_tools
 @pytest.mark.parametrize("version", [RUNNING, "26.09.1", "26.08.30"])
-def test_same_or_older_release_sets_no_flag(tmp_path: Path, server, keys, version: str) -> None:
+def test_same_or_older_release_sets_no_flag(tmp_path: Path, host_bin: Path, server, keys, version: str) -> None:
     directory, url = server
     publish(directory, version, keys["release"])
-    flagged, log = check(tmp_path, url, keys["release-ring"])
+    flagged, log = check(tmp_path, host_bin, url, keys["release-ring"])
     assert not flagged, log
     assert f"up to date: {url}/ offers {version}, running {RUNNING}" in log
 
 
 @needs_tools
-def test_signature_from_another_key_sets_no_flag(tmp_path: Path, server, keys) -> None:
+def test_signature_from_another_key_sets_no_flag(tmp_path: Path, host_bin: Path, server, keys) -> None:
     directory, url = server
     publish(directory, "26.09.10", keys["stranger"])
-    flagged, log = check(tmp_path, url, keys["release-ring"])
+    flagged, log = check(tmp_path, host_bin, url, keys["release-ring"])
     assert not flagged, log
     assert "does not verify" in log
 
 
 @needs_tools
-def test_manifest_changed_after_signing_sets_no_flag(tmp_path: Path, server, keys) -> None:
+def test_manifest_changed_after_signing_sets_no_flag(tmp_path: Path, host_bin: Path, server, keys) -> None:
     directory, url = server
     publish(directory, "26.09.10", keys["release"], tamper=True)
-    flagged, log = check(tmp_path, url, keys["release-ring"])
+    flagged, log = check(tmp_path, host_bin, url, keys["release-ring"])
     assert not flagged, log
     assert "does not verify" in log
 
 
 @needs_tools
-def test_unsigned_manifest_sets_no_flag(tmp_path: Path, server, keys) -> None:
+def test_unsigned_manifest_sets_no_flag(tmp_path: Path, host_bin: Path, server, keys) -> None:
     directory, url = server
     publish(directory, "26.09.10", keys["release"], sign=False)
-    flagged, log = check(tmp_path, url, keys["release-ring"])
+    flagged, log = check(tmp_path, host_bin, url, keys["release-ring"])
     assert not flagged, log
     assert "cannot fetch" in log
 
 
 @needs_tools
-def test_unreachable_boot_server_sets_no_flag(tmp_path: Path, keys) -> None:
+def test_unreachable_boot_server_sets_no_flag(tmp_path: Path, host_bin: Path, keys) -> None:
     with ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler) as probe:
         port = probe.server_address[1]
-    flagged, log = check(tmp_path, f"http://127.0.0.1:{port}/rel", keys["release-ring"])
+    flagged, log = check(tmp_path, host_bin, f"http://127.0.0.1:{port}/rel", keys["release-ring"])
     assert not flagged, log
     assert "cannot fetch" in log
 
 
 @needs_tools
-def test_not_network_booted_is_a_no_op(tmp_path: Path, keys) -> None:
-    flagged, log = check(tmp_path, None, keys["release-ring"])
+def test_not_network_booted_is_a_no_op(tmp_path: Path, host_bin: Path, keys) -> None:
+    flagged, log = check(tmp_path, host_bin, None, keys["release-ring"])
     assert not flagged, log
     assert "not network booted" in log

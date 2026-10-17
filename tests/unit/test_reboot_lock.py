@@ -3,7 +3,7 @@
 bluefin-reboot-lock takes a reboot slot before the nightly reboot and the boot
 deadline's reboot, and bluefin-reboot-lock-release.service gives it back once
 a boot is good. Without a configured server both are no-ops. The client
-itself runs in tests/unit/bluefin-reboot-lock_test.bats.
+itself (bluefin-host's bluefin-reboot-lock) runs in test_reboot_lock_client.py.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from _systemd import SystemdFile, preset
 ROOT = Path(__file__).resolve().parents[2]
 UNITS = ROOT / "files" / "os" / "systemd" / "system"
 PRESETS = ROOT / "files" / "os" / "systemd" / "system-preset"
-CLIENT = ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-reboot-lock"
+HOST = ROOT / "files" / "homelab" / "cluster" / "internal" / "host"
 RELEASE = UNITS / "bluefin-reboot-lock-release.service"
 REBOOT_DROPINS = UNITS / "systemd-sysupdate-reboot.service.d"
 TIMER_DROPIN = UNITS / "systemd-sysupdate-reboot.timer.d" / "20-fleet-lock.conf"
@@ -33,13 +33,11 @@ def reboot_service() -> SystemdFile:
 
 
 def test_client_ships_where_the_units_run_it() -> None:
-    element = yaml.safe_load((ROOT / "elements" / "bluefin-server" / "os-update-check.bst").read_text(encoding="utf-8"))
-    assert element["sources"] == [{"kind": "local", "path": "files/os/update-check"}]
+    element = yaml.safe_load((ROOT / "elements" / "bluefin-server" / "os-host.bst").read_text(encoding="utf-8"))
+    assert element["sources"] == [{"kind": "local", "path": "files/homelab/cluster"}]
+    assert "reboot-lock" in "\n".join(element["config"]["install-commands"])
     stack = yaml.safe_load((ROOT / "elements" / "bluefin-server" / "os-stack.bst").read_text(encoding="utf-8"))
-    assert "bluefin-server/os-update-check.bst" in stack["depends"]
-    assert CLIENT.read_text(encoding="utf-8").startswith("#!/usr/bin/bash\n")
-    assert CLIENT.stat().st_mode & stat.S_IXUSR
-    subprocess.run(["bash", "-n", str(CLIENT)], check=True)
+    assert "bluefin-server/os-host.bst" in stack["depends"]
 
 
 def test_nightly_reboot_takes_a_slot_only_after_every_other_check() -> None:
@@ -49,7 +47,7 @@ def test_nightly_reboot_takes_a_slot_only_after_every_other_check() -> None:
     conds = service.commands("ExecCondition")
     assert conds[-1] == ["/usr/libexec/bluefin-reboot-lock", "acquire"]
     assert conds[0] == ["/usr/libexec/bluefin-update-pending"]
-    assert "leaving the reboot to kured" in conds[1][-1]
+    assert conds[1] == ["/usr/bin/bluefin-host", "kube-interlock"]
     assert service.values("Service", "ImportCredential") == [CREDENTIALS]
     # The operator lock files still hold the reboot before any request.
     assert service.values("Unit", "ConditionPathExists")[-2:] == ["!/run/reboot-lock", "!/etc/reboot-lock"]
@@ -58,8 +56,9 @@ def test_nightly_reboot_takes_a_slot_only_after_every_other_check() -> None:
 def test_boot_deadline_reads_the_same_configuration() -> None:
     service = SystemdFile(UNITS / "bluefin-boot-deadline.service")
     assert service.values("Service", "ImportCredential") == [CREDENTIALS]
-    script = (ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-boot-deadline").read_text(encoding="utf-8")
-    assert "/usr/libexec/bluefin-reboot-lock" in script
+    # The deadline runs the same client in-process (or $BLUEFIN_REBOOT_LOCK).
+    source = (HOST / "bootdeadline" / "bootdeadline.go").read_text(encoding="utf-8")
+    assert 'fleetlock.Main(h, []string{"acquire"})' in source
 
 
 def test_release_runs_on_installed_nodes_after_the_boot_is_judged() -> None:
@@ -90,30 +89,29 @@ def test_release_retries_with_backoff() -> None:
     assert unit.value("Service", "RestartMaxDelaySec") == "1h"
 
 
-def _bless_condition(tmp_path: Path, status: str | None) -> subprocess.CompletedProcess[str]:
+def _bless_condition(tmp_path: Path, host_bin: Path, status: str | None) -> subprocess.CompletedProcess[str]:
     (argv,) = SystemdFile(RELEASE).commands("ExecCondition")
-    assert argv[:2] == ["/usr/bin/sh", "-c"] and len(argv) == 3, argv
+    assert argv == ["/usr/bin/bluefin-host", "boot-is-good"], argv
     bless = tmp_path / "systemd-bless-boot"
     body = f'[ "$1" = status ] && echo {status}\n' if status is not None else "exit 1\n"
     bless.write_text("#!/bin/sh\n" + body, encoding="utf-8")
     bless.chmod(bless.stat().st_mode | stat.S_IXUSR)
-    script = argv[2].replace("/usr/lib/systemd/systemd-bless-boot", str(bless))
-    assert script != argv[2]
-    return subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=dict(os.environ))
+    env = dict(os.environ, BLUEFIN_BLESS_BOOT=str(bless))
+    return subprocess.run([str(host_bin / "bluefin-host"), argv[1]], capture_output=True, text=True, env=env)
 
 
 @pytest.mark.parametrize("status", ["good", "clean"])
-def test_a_good_boot_releases_the_slot(tmp_path: Path, status: str) -> None:
-    result = _bless_condition(tmp_path, status)
+def test_a_good_boot_releases_the_slot(tmp_path: Path, host_bin: Path, status: str) -> None:
+    result = _bless_condition(tmp_path, host_bin, status)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("status", ["indeterminate", "bad", "dirty", None])
-def test_an_unblessed_boot_keeps_the_slot(tmp_path: Path, status: str | None) -> None:
+def test_an_unblessed_boot_keeps_the_slot(tmp_path: Path, host_bin: Path, status: str | None) -> None:
     # 1 skips the unit; the node keeps its slot until a boot is good.
-    result = _bless_condition(tmp_path, status)
+    result = _bless_condition(tmp_path, host_bin, status)
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "keeping the reboot slot" in result.stdout
+    assert f"boot is {status or 'unknown'}: keeping the reboot slot\n" == result.stdout
 
 
 def test_release_is_enabled_in_usr_not_by_preset() -> None:

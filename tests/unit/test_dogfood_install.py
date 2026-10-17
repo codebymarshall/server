@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "dogfood-install.sh"
 DISKLESS = ROOT / "scripts" / "dogfood-diskless.sh"
-DEADLINE = ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-boot-deadline"
+DEADLINE = ROOT / "files" / "homelab" / "cluster" / "internal" / "host" / "bootdeadline" / "bootdeadline.go"
 SYSUPDATE_D = ROOT / "files" / "os" / "sysupdate.d"
 TOOLKIT_SYSUPDATE_D = ROOT / "files" / "os" / "sysupdate.nvidia-container-toolkit.d"
 UNIT_DIRS = ROOT / "files"

@@ -6,6 +6,10 @@ join tokens. One static Go binary in the homelab sysext
 come from `HOMELAB_ROLE` in `/etc/bluefin/homelab.conf`; every unit is a
 no-op without that file or outside its role.
 
+The module also builds `bluefin-host` (`cmd/bluefin-host`, `internal/host/`),
+the base OS's runtime helpers, into `/usr` (`bluefin-server/os-host.bst`; see
+`docs/skills/ddi-installer-build.md`).
+
 | Command | Unit | Role | Does |
 |---|---|---|---|
 | `prepare` | `bluefin-cluster-prepare.service` (wanted by `kubeadm-init`, `k0scontroller`) | control-plane | hostname `localhost` → `bluefin-<machine-id[:8]>` (`/usr/libexec/bluefin-hostname`, which the base OS already runs on first boot); adds `controlPlaneEndpoint: <host>.local:6443` and `apiServer.certSANs` (`<host>.local`, `<host>`, global addresses) to `/etc/kubernetes/bluefin/init.yaml` unless it already sets an endpoint |

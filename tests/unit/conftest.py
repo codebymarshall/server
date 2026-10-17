@@ -3,6 +3,7 @@
 import importlib.util
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,37 @@ def node() -> str:
 @pytest.fixture(scope="session")
 def shellcheck() -> str:
     return _required_tool("shellcheck")
+
+
+HOST_MODULE = REPO_ROOT / "files" / "homelab" / "cluster"
+# The helpers elements/bluefin-server/os-host.bst links to /usr/bin/bluefin-host.
+HOST_HELPERS = (
+    "boot-deadline",
+    "boot-origin",
+    "diskless-update-check",
+    "firstboot-credentials",
+    "hostname",
+    "reboot-lock",
+    "repair-etc-modes",
+    "sysext-fetch",
+    "sysext-modules",
+    "update-pending",
+    "update-status",
+    "update-status-migrate",
+)
+
+
+@pytest.fixture(scope="session")
+def host_bin(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A directory with bluefin-host, built from files/homelab/cluster as
+    os-host.bst builds it, and the /usr/libexec/bluefin-* names linked to it."""
+    go = _required_tool("go")
+    out = tmp_path_factory.mktemp("bluefin-host")
+    env = dict(os.environ, CGO_ENABLED="0", GOFLAGS="-mod=vendor -trimpath -buildvcs=false", GOPROXY="off", GOTOOLCHAIN="local")
+    subprocess.run([go, "build", "-o", str(out / "bluefin-host"), "./cmd/bluefin-host"], cwd=HOST_MODULE, env=env, check=True)
+    for name in HOST_HELPERS:
+        (out / f"bluefin-{name}").symlink_to("bluefin-host")
+    return out
 
 
 def _load_module():

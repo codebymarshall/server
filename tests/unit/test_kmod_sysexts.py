@@ -3,14 +3,13 @@
 A modules.* index inside a sysext shadows the base image's and every other
 module sysext's through the overlay. Each module sysext ships only its own
 modules under /usr/lib/modules/<kver>/extra/<name>/, and its load unit runs
-/usr/libexec/bluefin-sysext-modules (files/os/libexec), which indexes the
+/usr/libexec/bluefin-sysext-modules (bluefin-host), which indexes the
 merged tree under /run and loads through `modprobe -d`.
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,7 @@ from _systemd import SystemdFile
 
 ROOT = Path(__file__).resolve().parents[2]
 ELEMENTS = ROOT / "elements"
-HELPER = ROOT / "files" / "os" / "libexec" / "bluefin-sysext-modules"
+HELPER = ROOT / "files" / "homelab" / "cluster" / "internal" / "host" / "kmods" / "kmods.go"
 HELPER_PATH = "/usr/libexec/bluefin-sysext-modules"
 ZFS_SRC = ROOT / "files" / "zfs" / "sysext"
 NVIDIA_SRC = ROOT / "files" / "nvidia" / "sysext"
@@ -102,13 +101,11 @@ def test_no_module_sysext_unit_runs_a_bare_modprobe(unit: Path) -> None:
 
 
 def test_the_helper_ships_in_the_base_image() -> None:
-    element = load(ELEMENTS / "bluefin-server" / "os-creds-prov.bst")
-    assert {"path": "files/os/libexec", "directory": "libexec-src", "kind": "local"} in element["sources"]
+    element = load(ELEMENTS / "bluefin-server" / "os-host.bst")
     commands = "\n".join(element["config"]["install-commands"])
-    assert "install -Dm0755 libexec-src/bluefin-sysext-modules" in commands
-    assert f'"%{{install-root}}{HELPER_PATH}"' in commands
-    assert "bluefin-server/os-creds-prov.bst" in load(ELEMENTS / "bluefin-server" / "os-stack.bst")["depends"]
-    assert HELPER.stat().st_mode & 0o111
+    assert "sysext-modules" in commands
+    assert 'ln -s ../bin/bluefin-host "%{install-root}/usr/libexec/bluefin-${helper}"' in commands
+    assert "bluefin-server/os-host.bst" in load(ELEMENTS / "bluefin-server" / "os-stack.bst")["depends"]
     base = load(ELEMENTS / "bluefin-server" / "os-base.bst")["depends"]
     for dep in ("components/kmod.bst", "components/util-linux-full.bst", "public-stacks/runtime-gnu.bst"):
         assert f"freedesktop-sdk.bst:{dep}" in base
@@ -116,24 +113,21 @@ def test_the_helper_ships_in_the_base_image() -> None:
 
 def test_the_helper_is_inert_in_the_base_image() -> None:
     for path in (ROOT / "files" / "os").rglob("*"):
-        if path.is_file() and path != HELPER:
+        if path.is_file():
             assert "bluefin-sysext-modules" not in path.read_text(encoding="utf-8", errors="replace"), path
 
 
 def test_the_helper_indexes_under_run_and_loads_with_modprobe_d() -> None:
     text = HELPER.read_text(encoding="utf-8")
-    assert 'basedir="${BLUEFIN_KMOD_BASEDIR:-/run/bluefin/kmods}"' in text
-    assert 'depmod -b "${tmp}" "${kver}"' in text
-    assert 'exec modprobe -d "${basedir}" -S "${kver}" -a -- "$@"' in text
-    (links,) = re.findall(r"for entry in (kernel extra updates \\\n\s+modules\.order[^;]+);", text)
-    assert links.split()[:3] == ["kernel", "extra", "updates"]
+    assert 'basedir := h.Env("BLUEFIN_KMOD_BASEDIR", "/run/bluefin/kmods")' in text
+    assert 'h.Exec("depmod", "-b", tmp, kver)' in text
+    assert '[]string{"modprobe", "-d", basedir, "-S", kver, "-a", "--"}' in text
+    (links,) = re.findall(r"var linked = \[\]string\{([^}]+)\}", text)
+    names = re.findall(r'"([^"]+)"', links)
+    assert names[:3] == ["kernel", "extra", "updates"]
     assert all(not n.startswith("modules.") or n in (
         "modules.order", "modules.builtin", "modules.builtin.modinfo", "modules.builtin.ranges"
-    ) for n in links.replace("\\", " ").split())
-
-
-def test_the_helper_is_shellcheck_clean(shellcheck: str) -> None:
-    subprocess.run([shellcheck, "-S", "style", str(HELPER)], check=True)
+    ) for n in names)
 
 
 def test_the_nvidia_guard_only_refuses_a_second_flavour() -> None:

@@ -24,7 +24,7 @@ ImportCredential=bluefin.reboot-lock.*
 # ("clean", e.g. the previous UKI after a rollback). A counted boot that has
 # not been blessed ("indeterminate", "bad", "dirty") keeps it, so the fleet
 # does not reboot another node while this one is unhealthy.
-ExecCondition=/usr/bin/sh -c 's=$$(/usr/lib/systemd/systemd-bless-boot status); case "$$s" in good|clean) ;; *) echo "boot is $${s:-unknown}: keeping the reboot slot"; exit 1 ;; esac'
+ExecCondition=/usr/bin/bluefin-host boot-is-good
 ExecStart=/usr/libexec/bluefin-reboot-lock release
 # The FleetLock server may be down; retry with backoff until it confirms.
 Restart=on-failure

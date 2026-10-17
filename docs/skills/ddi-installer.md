@@ -243,6 +243,11 @@ Sources are the release assets on GitHub Releases, verified against the
 GPG-signed `SHA256SUMS` with `Verify=yes` (see
 `systemd-sysupdate-verification.md`).
 
+The `/usr/libexec/bluefin-*` update and first-boot helpers named below are
+symlinks to one static Go binary, `/usr/bin/bluefin-host`, which runs the
+helper its name says (also as `bluefin-host <name>`; see
+`ddi-installer-build.md`).
+
 ### Automatic updates on installed nodes
 
 `files/os/systemd/system-preset/80-bluefin-updates.preset` enables FSDK's
@@ -328,7 +333,7 @@ only when a newer version than the booted one is installed.
   `bluefin.reboot-lock.group`, which override the file. `GROUP` defaults to
   `default`. Without a URL nothing changes, so single hosts and Kubernetes
   nodes (kured) are unaffected. `/usr/libexec/bluefin-reboot-lock` is the
-  client (bash and curl, no daemon); its client id is the machine ID hashed
+  client (no daemon); its client id is the machine ID hashed
   with an application key (`systemd-id128 machine-id
   --app-specific=924987751bb64ad68c398e4be4e32e2f`), and every message logs it.
   - *Acquire*: `bluefin-reboot-lock acquire` is the last `ExecCondition=` of

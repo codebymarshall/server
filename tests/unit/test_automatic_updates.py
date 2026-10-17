@@ -29,10 +29,10 @@ DISKLESS = UNITS / "systemd-sysupdate.service.d" / "10-diskless.conf"
 KURED = UNITS / "systemd-sysupdate.service.d" / "20-kured.conf"
 INTERLOCK = UNITS / "systemd-sysupdate-reboot.service.d" / "20-interlock.conf"
 MIGRATE_UNIT = UNITS / "bluefin-update-status-migrate.service"
-MIGRATE_SCRIPT = ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-update-status-migrate"
 STATUS_HOOK = UNITS / "systemd-sysupdate.service.d" / "30-update-status.conf"
 STATUS_UNIT = UNITS / "bluefin-update-status.service"
-STATUS_SCRIPT = ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-update-status"
+# bluefin-update-status and bluefin-update-status-migrate (bluefin-host).
+STATUS_SOURCE = ROOT / "files" / "homelab" / "cluster" / "internal" / "host" / "updatestatus" / "updatestatus.go"
 MOTD_LINK = ROOT / "files" / "os" / "tmpfiles.d" / "40-bluefin-motd.conf"
 DISKLESS_ONLY = "/run/machines/rootdisk.raw"
 
@@ -112,7 +112,7 @@ def test_update_units_are_inert_on_diskless_and_installer_boots(dropin: str) -> 
 
 
 @pytest.mark.parametrize("diskless", [True, False])
-def test_sysupdated_masks_the_uki_transfer_only_on_diskless_boots(tmp_path: Path, diskless: bool) -> None:
+def test_sysupdated_masks_the_uki_transfer_only_on_diskless_boots(tmp_path: Path, host_bin: Path, diskless: bool) -> None:
     # Without $BOOT, a transfer relative to it fails every sysupdate verb and
     # leaves sysupdated with no host target (#375); the UKI is the only one.
     needs_boot = [
@@ -123,13 +123,12 @@ def test_sysupdated_masks_the_uki_transfer_only_on_diskless_boots(tmp_path: Path
     assert needs_boot == ["20-uki.transfer"]
 
     argv = shlex.split(ini(UNITS / "systemd-sysupdated.service.d" / "10-diskless.conf")["Service"]["ExecStartPre"])
-    assert argv[:2] == ["/usr/bin/sh", "-c"] and DISKLESS_ONLY in argv[2]
-    script = argv[2].replace("/run/", f"{tmp_path}/run/")
+    assert argv == ["/usr/bin/bluefin-host", "mask-uki-transfer"]
     if diskless:
         (tmp_path / "run" / "machines").mkdir(parents=True)
         (tmp_path / "run" / "machines" / "rootdisk.raw").touch()
     for _ in range(2):
-        subprocess.run(["sh", "-c", script], check=True)
+        subprocess.run([str(host_bin / "bluefin-host"), argv[1], f"--root={tmp_path}"], check=True)
 
     mask = tmp_path / "run" / "sysupdate.d" / "20-uki.transfer"
     if diskless:
@@ -143,7 +142,9 @@ def test_kured_flag_is_set_only_when_an_update_is_pending() -> None:
     cmd = service["ExecStopPost"]
     # bluefin-update-pending wraps `systemd-sysupdate pending` and says no
     # when that version already failed its boot tries (test_update_pending.py).
-    assert cmd == "/usr/bin/sh -c 'if /usr/libexec/bluefin-update-pending; then touch /run/reboot-required; fi'"
+    # `bluefin-host kured-flag` touches /run/reboot-required when
+    # bluefin-update-pending reports an update (test_update_pending.py runs it).
+    assert cmd == "/usr/bin/bluefin-host kured-flag"
     for dropin in (UNITS / "systemd-sysupdate.service.d").iterdir():
         keys = {key for section in ini(dropin).values() for key in section}
         assert "ExecStartPost" not in keys, dropin
@@ -168,14 +169,9 @@ def test_reboot_skips_an_update_that_already_failed_its_tries() -> None:
     assert conds[0] == "/usr/libexec/bluefin-update-pending"
 
 
-def _interlock_script() -> str:
-    cmd = values(INTERLOCK, "ExecCondition")[1]
-    argv = shlex.split(cmd.replace("$$", "$"))
-    assert argv[:2] == ["/usr/bin/sh", "-c"] and len(argv) == 3, argv
-    return argv[2]
-
-
-def _run_interlock(tmp_path: Path, states: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _run_interlock(tmp_path: Path, host_bin: Path, states: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    argv = shlex.split(values(INTERLOCK, "ExecCondition")[1])
+    assert argv == ["/usr/bin/bluefin-host", "kube-interlock"], argv
     bindir = tmp_path / "bin"
     bindir.mkdir(exist_ok=True)
     fake = bindir / "systemctl"
@@ -186,11 +182,11 @@ def _run_interlock(tmp_path: Path, states: dict[str, str]) -> subprocess.Complet
     fake.write_text("\n".join(lines) + "\n", encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
-    return subprocess.run(["sh", "-c", _interlock_script()], capture_output=True, text=True, env=env)
+    return subprocess.run([str(host_bin / "bluefin-host"), argv[1]], capture_output=True, text=True, env=env)
 
 
-def test_reboot_proceeds_without_kubernetes(tmp_path: Path) -> None:
-    result = _run_interlock(tmp_path, {})
+def test_reboot_proceeds_without_kubernetes(tmp_path: Path, host_bin: Path) -> None:
+    result = _run_interlock(tmp_path, host_bin, {})
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -204,15 +200,15 @@ def test_reboot_proceeds_without_kubernetes(tmp_path: Path) -> None:
         ("k0sworker.service", "deactivating"),
     ],
 )
-def test_reboot_stands_down_while_kubernetes_runs(tmp_path: Path, unit: str, state: str) -> None:
-    result = _run_interlock(tmp_path, {unit: state})
+def test_reboot_stands_down_while_kubernetes_runs(tmp_path: Path, host_bin: Path, unit: str, state: str) -> None:
+    result = _run_interlock(tmp_path, host_bin, {unit: state})
     # 1..254 makes systemd skip the unit instead of failing it.
     assert result.returncode == 1, result.stdout + result.stderr
-    assert "leaving the reboot to kured" in result.stdout
+    assert f"{unit} is {state}: leaving the reboot to kured" in result.stdout
 
 
-def test_reboot_proceeds_when_kubernetes_is_stopped_or_failed(tmp_path: Path) -> None:
-    result = _run_interlock(tmp_path, {"kubelet.service": "failed", "k0sworker.service": "inactive"})
+def test_reboot_proceeds_when_kubernetes_is_stopped_or_failed(tmp_path: Path, host_bin: Path) -> None:
+    result = _run_interlock(tmp_path, host_bin, {"kubelet.service": "failed", "k0sworker.service": "inactive"})
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -242,19 +238,18 @@ def test_the_banner_unit_runs_the_status_helper_with_persistent_state() -> None:
     assert service["Type"] == "oneshot"
     assert service["ExecStart"] == "/usr/libexec/bluefin-update-status"
     assert service["StateDirectory"] == "bluefin-update-status"
-    assert "/var/lib/bluefin-update-status" in STATUS_SCRIPT.read_text(encoding="utf-8")
-    assert STATUS_SCRIPT.stat().st_mode & stat.S_IXUSR
+    assert '"/var/lib/bluefin-update-status"' in STATUS_SOURCE.read_text(encoding="utf-8")
     assert ini(STATUS_UNIT)["Install"]["WantedBy"] == "multi-user.target"
 
 
 def test_the_banners_are_the_files_agetty_login_and_sshd_read() -> None:
-    script = STATUS_SCRIPT.read_text(encoding="utf-8")
+    script = STATUS_SOURCE.read_text(encoding="utf-8")
     # agetty merges /run/issue.d with the image's /usr/lib/issue.d banner.
-    assert "/run/issue.d/40-bluefin-update.issue" in script
+    assert '"/run/issue.d/40-bluefin-update.issue"' in script
     assert (ROOT / "files" / "os" / "issue.d" / "30-bluefin.issue").name < "40-bluefin-update.issue"
     # shadow's login (MOTD_FILE /etc/motd) and sshd (UsePAM no) read only
     # /etc/motd; it links to the runtime file, never over an operator's own.
-    assert "/run/motd" in script
+    assert '"/run/motd"' in script
     lines = [line.split() for line in MOTD_LINK.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
     assert lines == [["L", "/etc/motd", "-", "-", "-", "-", "../run/motd"]]
 
@@ -270,13 +265,14 @@ def test_nodes_that_updated_into_the_banner_unit_enable_it_once() -> None:
         f"!{DISKLESS_ONLY}",
     ]
     assert unit["Unit"]["ConditionKernelCommandLine"] == "!root=tmpfs"
-    assert MIGRATE_SCRIPT.stat().st_mode & stat.S_IXUSR
     usr = (ROOT / "elements" / "oci" / "bluefin-server-usr.bst").read_text(encoding="utf-8")
     assert "multi-user.target.wants/bluefin-update-status-migrate.service" in usr
 
 
 def test_the_migration_never_reenables_the_update_timers() -> None:
     # An operator who disabled the update or reboot timer keeps them off.
-    code = [line for line in MIGRATE_SCRIPT.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#")]
-    assert "unit=bluefin-update-status.service" in code
+    source = STATUS_SOURCE.read_text(encoding="utf-8")
+    migrate = source[source.index("func Migrate("):]
+    code = [line.strip() for line in migrate.splitlines() if not line.lstrip().startswith("//")]
+    assert 'const unit = "bluefin-update-status.service"' in code
     assert not [line for line in code if ".timer" in line or "preset-all" in line or "system-preset" in line]

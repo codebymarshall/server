@@ -19,10 +19,9 @@ depends:
   # A/B System Update Configurations
   - bluefin-server/os-sysupdate.bst
 
-  # Diskless update signal (bluefin-diskless-update-check) and the shared
-  # boot-origin helper it uses
-  - bluefin-server/os-update-check.bst
-  - bluefin-server/boot-origin.bst
+  # Runtime helpers (bluefin-host): update status, reboot interlocks, boot
+  # deadline, diskless update check, sysext fetch, first-boot naming
+  - bluefin-server/os-host.bst
 
   # k0s component system update configuration
   - bluefin-server/os-k0s-sysupdate.bst

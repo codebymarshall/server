@@ -4,7 +4,7 @@ description: Build, export, and dogfood the Bluefin Server image set (OS DDI, si
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-10-11"
+  last_updated: "2026-10-16"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -53,6 +53,33 @@ and `latest`, artifact type
 just publish-oci ghcr.io/<owner>/bluefin-server                 # podman login first
 just publish-oci <registry-host>:30500/bluefin-server dist/diskless 1  # plain HTTP
 ```
+
+## bluefin-host
+
+The base OS's non-interactive runtime helpers (update status, reboot
+interlocks and FleetLock client, boot deadline, diskless update check, sysext
+fetch, first-boot naming and credentials, the module-sysext loader, the
+`/etc` mode repair) are one static Go binary,
+`files/homelab/cluster/cmd/bluefin-host` with its packages in
+`internal/host/` (standard library only, in the vendored bluefin-cluster
+module). `bluefin-server/os-host.bst` builds it into `/usr/bin/bluefin-host`
+and links each `/usr/libexec/bluefin-<name>` to it; the binary runs the helper
+its name (or its first argument) names. Unit drop-ins call
+`bluefin-host kube-interlock`, `kured-flag`, `mask-uki-transfer` and
+`boot-is-good` directly. Installer helpers, the justfile and the initrd's
+copy of `bluefin-boot-origin` stay shell.
+
+```bash
+cd files/homelab/cluster
+gofmt -l cmd internal && go vet ./... && go test -race ./...  # as CI's go job
+just bst build bluefin-server/os-host.bst                    # vet + test in-element
+python3 -m pytest tests/unit -q                              # builds and runs it
+```
+
+The pytest suites build the binary once per session (`host_bin` in
+`tests/unit/conftest.py`, needs `go`) and run it under the helpers' old
+names against stub systemd tools on `PATH`, with the same `BLUEFIN_*`
+overrides the shell helpers read.
 
 ## Keys
 

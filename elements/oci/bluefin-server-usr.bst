@@ -133,37 +133,12 @@ config:
     # A z line would do it too, but z asserts the factory mode on *every*
     # boot and would undo an operator's own tightening of, say, a
     # sshd_config.d drop-in; chmod go-w only ever removes access.
-    mkdir -p /sysroot/usr/lib/bluefin /sysroot/usr/libexec
+    # /usr/libexec/bluefin-repair-etc-modes (bluefin-host, os-host.bst)
+    # reads the list.
+    mkdir -p /sysroot/usr/lib/bluefin
     list=/sysroot/usr/lib/bluefin/etc-mode-repair.list
     find "${factory}" -mindepth 1 \( -type d ! -perm -1000 -o -type f \) -perm /022 -printf '%P\n' | LC_ALL=C sort > "${list}"
-
-    cat > /sysroot/usr/libexec/bluefin-repair-etc-modes <<'EOF'
-    #!/usr/bin/bash
-    # bluefin-repair-etc-modes — one-shot repair of /etc modes on nodes
-    # installed from an image built before the sysroot modes were fixed.
-    #
-    # Only clears group/other write. It never widens a mode and never
-    # re-asserts a factory mode, so an operator who tightened a path keeps
-    # their mode. Runs once; a stamp in /var suppresses later boots.
-    set -euo pipefail
-    list=/usr/lib/bluefin/etc-mode-repair.list
-    stamp=/var/lib/bluefin/etc-mode-repair.stamp
-    repaired=0
-    while IFS= read -r rel; do
-        path="/etc/${rel}"
-        # Skip what the node no longer has, symlinks (chmod would follow
-        # them out of /etc) and sticky dirs, which are meant to be 1777.
-        if [ ! -e "${path}" ] || [ -L "${path}" ] || [ -k "${path}" ]; then
-            continue
-        fi
-        chmod go-w "${path}"
-        repaired=$(( repaired + 1 ))
-    done < "${list}"
-    mkdir -p "$(dirname "${stamp}")"
-    : > "${stamp}"
-    echo "Cleared group/other write from ${repaired} path(s) under /etc"
-    EOF
-    chmod 0755 /sysroot/usr/libexec/bluefin-repair-etc-modes
+    test -L /sysroot/usr/libexec/bluefin-repair-etc-modes
 
     unit=/sysroot/usr/lib/systemd/system/bluefin-repair-etc-modes.service
     cat > "${unit}" <<'EOF'

@@ -233,7 +233,8 @@ def test_kured_watches_the_flag_bluefin_updates_set() -> None:
     volume = next(v for v in ds["spec"]["template"]["spec"]["volumes"] if v["name"] == "sentinel")
     assert volume["hostPath"]["path"] == "/run"
     # The flag the base image's update path and boot deadline touch.
-    assert "/run/reboot-required" in (ROOT / "files" / "os" / "update-check" / "usr" / "libexec" / "bluefin-boot-deadline").read_text()
+    deadline = ROOT / "files" / "homelab" / "cluster" / "internal" / "host" / "bootdeadline" / "bootdeadline.go"
+    assert '"BLUEFIN_REBOOT_SENTINEL", "/run/reboot-required"' in deadline.read_text()
     assert "--time-zone=${HOMELAB_KURED_TIME_ZONE}" in args
 
 
