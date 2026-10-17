@@ -46,6 +46,10 @@ build-depends:
 - nvidia/nvidia-open-595.bst
 - oci/nvidia-container-toolkit-sysext.bst
 - nvidia/nvidia-container-toolkit.bst
+- runtimes/podman-sysext.bst
+- runtimes/podman-runtime.bst
+- runtimes/docker-sysext.bst
+- runtimes/docker-bin.bst
 
 config:
   path: /bluefin-server.spdx.json

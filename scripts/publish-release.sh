@@ -105,6 +105,8 @@ expected_patterns() {
         "homelab_${v}\\.raw\\.zst" \
         "argo-workflows_${v}\\.raw\\.zst" \
         "mcp_${v}\\.raw\\.zst" \
+        "podman_${v}\\.raw\\.zst" \
+        "docker_${v}\\.raw\\.zst" \
         "nvidia-open-595_${v}\\.raw\\.zst" \
         "k0s-[0-9][0-9A-Za-z.+-]*\\.raw\\.zst" \
         "nvidia-container-toolkit-[0-9][0-9A-Za-z.+-]*\\.raw\\.zst"
@@ -285,6 +287,7 @@ In the names below, \`<ver>\` is \`${ver}\` and \`<uuid>\` identifies a partitio
 | \`homelab_<ver>.raw.zst\` | Optional homelab cluster tooling extension. |
 | \`argo-workflows_<ver>.raw.zst\`, \`mcp_<ver>.raw.zst\`, \`kubestellar_<ver>.raw.zst\` | Optional homelab extensions: Argo Workflows, MCP server and KubeStellar Console. |
 | \`zfs_<ver>.raw.zst\` | Optional OpenZFS extension. |
+| \`podman_<ver>.raw.zst\`, \`docker_<ver>.raw.zst\` | Optional rootless host engine extensions; user units are disabled by default. |
 | \`nvidia-open-595_<ver>.raw.zst\`, \`nvidia-container-toolkit-<toolkit-version>.raw.zst\` | Optional NVIDIA open kernel modules and Container Toolkit extensions. |
 | \`homelab-*.bu\`, \`homelab-*.ign\` | Editable Butane YAML and rendered Ignition JSON provisioning templates for control-plane/node roles, with kubeadm or k0s. Customise before use. |
 | \`bluefin-server_<ver>.spdx.json\` | SPDX software bill of materials (SBOM), listing the image's components. |

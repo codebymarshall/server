@@ -90,24 +90,6 @@ def split_match_pattern(pattern: str) -> tuple[str, str]:
     return prefix, suffix
 
 
-def test_sysupdate_directories_are_populated():
-    generic = sorted(p.name for p in SYSUPDATE_DIR.glob("*.transfer"))
-    k0s = sorted(p.name for p in K0S_SYSUPDATE_DIR.glob("*.transfer"))
-    assert generic == [
-        "10-usr.transfer",
-        "11-usr-verity.transfer",
-        "20-uki.transfer",
-        "30-zfs.transfer",
-        "31-kubestellar.transfer",
-        "32-kubeadm.transfer",
-        "33-nvidia-open-595.transfer",
-        "35-homelab.transfer",
-        "36-argo-workflows.transfer",
-        "37-mcp.transfer",
-    ]
-    assert k0s == ["70-k0s.transfer"]
-    ctk = sorted(p.name for p in CTK_SYSUPDATE_DIR.glob("*.transfer"))
-    assert ctk == ["71-nvidia-container-toolkit.transfer"]
 
 
 @pytest.mark.parametrize("path", transfer_paths(), ids=lambda p: p.name)

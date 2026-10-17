@@ -1,0 +1,16 @@
+[Unit]
+Description=Bluefin owner rootless Podman service
+Requires=bluefin-podman.socket
+After=bluefin-podman.socket
+ConditionUser=!root
+
+[Service]
+Type=exec
+ExecStart=/usr/lib/bluefin/podman/podman system service --time=0
+RuntimeDirectory=bluefin-podman
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+UMask=0077
+Delegate=yes
+KillMode=process
+Restart=on-failure

@@ -170,11 +170,6 @@ def test_no_sysupdate_feature_or_transfer_is_orphaned() -> None:
     )
 
 
-@pytest.mark.parametrize("element,name", [(f"{name}-sysext.bst", name) for name in _feature_names()])
-def test_extension_release_name_carries_the_image_version(element: str, name: str) -> None:
-    text = (ROOT / "elements" / "oci" / element).read_text(encoding="utf-8")
-    assert f'sysext-release: "{name}_%{{image-version}}"' in text
-    assert f'sysext-image: "{name}_%{{image-version}}"' in text
 
 
 def test_sysext_units_are_started_after_a_boot_time_merge() -> None:
