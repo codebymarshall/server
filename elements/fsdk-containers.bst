@@ -3,8 +3,8 @@ kind: junction
 sources:
 - kind: git_repo
   url: https://github.com/projectbluefin/fsdk-containers.git
-  track: feat/server-homebrew-20261011
-  ref: ae5bf888b72693bb6774cd56d21da4677efc2e36
+  track: main
+  ref: a7919f8e5ced332395f63d6526570eedb501896c
 
 config:
   options:
