@@ -37,3 +37,17 @@ usr/lib/*-linux-gnu/libhwasan.so*
 usr/lib/*-linux-gnu/liblsan.so*
 usr/lib/*-linux-gnu/libtsan.so*
 usr/lib/*-linux-gnu/libubsan.so*
+
+# SQLite CLI (gpg keeps libsqlite3) and the GnuPG tools beyond signature
+# verification; both trees keep gpg, gpgv, gpg-agent and keyboxd.
+usr/bin/sqlite3
+usr/bin/gpgsm
+usr/bin/gpg-wks-client
+usr/bin/gpg-wks-server
+usr/bin/gpgtar
+usr/bin/gpg-card
+usr/bin/gpg-mail-tube
+usr/bin/gpgsplit
+usr/bin/gpgparsemail
+usr/libexec/gpg-wks-client
+usr/libexec/scdaemon

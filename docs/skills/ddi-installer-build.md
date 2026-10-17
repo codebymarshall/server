@@ -274,7 +274,14 @@ the check). CI runs it as the `image-check` job against the latest release.
 
 Only prune what the check can prove unused, or what nothing outside an
 interactive shell runs. Kernel modules, hwdb, keymaps and tools users run
-directly are product decisions, not prune-list entries.
+directly are product decisions, not prune-list entries. The check cannot see
+programs a binary execs itself: `systemd-pull` (behind `systemd-sysupdate`)
+runs `gpg`, which starts `gpg-agent` and `keyboxd`, so those stay with `gpgv`.
+
+Disabling systemd features (homed, userdb, portabled, oomd, localed,
+timedated, backlight, rfkill, hibernate, xdg-autostart) would need a patch on
+FSDK's systemd element, which moves systemd and every dependent off FSDK's
+artifact cache for every build; not done until measured to be worth it.
 
 ## Local builds with a remote cache
 

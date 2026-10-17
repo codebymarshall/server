@@ -3,3 +3,135 @@
 # The kernel ships inside the signed UKIs; bluefin-server-boot.bst takes it
 # from bluefin-server/kernel-modules.bst, not from the /usr image.
 usr/lib/modules/*/vmlinuz
+
+# GnuPG beyond signature verification. systemd-pull (systemd-sysupdate on
+# installed nodes) execs gpg, which starts gpg-agent and keyboxd;
+# bluefin-diskless-update-check runs gpgv. Those four stay.
+usr/bin/gpgscm
+usr/bin/gpgconf
+usr/bin/gpg-connect-agent
+usr/bin/dirmngr
+usr/bin/dirmngr-client
+usr/bin/kbxutil
+usr/bin/watchgnupg
+usr/bin/addgnupghome
+usr/bin/applygnupgdefaults
+usr/libexec/gpg-auth
+usr/libexec/gpg-check-pattern
+usr/libexec/gpg-pair-tool
+usr/libexec/gpg-preset-passphrase
+usr/libexec/gpg-protect-tool
+usr/share/gnupg
+# libgpg-error and libgcrypt developer tools and Lisp bindings.
+usr/bin/gpg-error
+usr/bin/mpicalc
+usr/bin/hmac256
+usr/bin/dumpsexp
+usr/share/common-lisp
+
+# cracklib tools and its uncompiled word list: no pw_dict is built into the
+# image, so only create-cracklib-dict ever read it. libpwquality keeps libcrack.
+usr/bin/cracklib-*
+usr/bin/create-cracklib-dict
+usr/share/cracklib
+
+# LVM2: nothing creates or activates volume groups. Device-mapper stays:
+# libdevmapper, dmsetup and 10-dm, 13-dm-disk and 95-dm-notify.rules serve
+# dm-verity /usr and cryptsetup. 11-dm-lvm.rules only acts on LVM- devices;
+# 69-dm-lvm.rules runs lvm pvscan.
+usr/bin/lvm
+usr/bin/lvchange
+usr/bin/lvconvert
+usr/bin/lvcreate
+usr/bin/lvdisplay
+usr/bin/lvextend
+usr/bin/lvm_import_vdo
+usr/bin/lvmconfig
+usr/bin/lvmdevices
+usr/bin/lvmdiskscan
+usr/bin/lvmdump
+usr/bin/lvmpersist
+usr/bin/lvmsadc
+usr/bin/lvmsar
+usr/bin/lvreduce
+usr/bin/lvremove
+usr/bin/lvrename
+usr/bin/lvresize
+usr/bin/lvs
+usr/bin/lvscan
+usr/bin/pvchange
+usr/bin/pvck
+usr/bin/pvcreate
+usr/bin/pvdisplay
+usr/bin/pvmove
+usr/bin/pvremove
+usr/bin/pvresize
+usr/bin/pvs
+usr/bin/pvscan
+usr/bin/vgcfgbackup
+usr/bin/vgcfgrestore
+usr/bin/vgchange
+usr/bin/vgck
+usr/bin/vgconvert
+usr/bin/vgcreate
+usr/bin/vgdisplay
+usr/bin/vgexport
+usr/bin/vgextend
+usr/bin/vgimport
+usr/bin/vgimportclone
+usr/bin/vgimportdevices
+usr/bin/vgmerge
+usr/bin/vgmknodes
+usr/bin/vgreduce
+usr/bin/vgremove
+usr/bin/vgrename
+usr/bin/vgs
+usr/bin/vgscan
+usr/bin/vgsplit
+usr/bin/dmeventd
+usr/bin/fsadm
+usr/bin/blkdeactivate
+usr/libexec/lvresize_fs_helper
+usr/lib/*-linux-gnu/liblvm2cmd.so*
+usr/lib/*-linux-gnu/libdevmapper-event*.so*
+usr/lib/*-linux-gnu/device-mapper
+usr/lib/udev/rules.d/11-dm-lvm.rules
+usr/lib/udev/rules.d/69-dm-lvm.rules
+
+# Headers and pkg-config files (libdevmapper's): nothing builds on a node.
+usr/include
+usr/lib/*-linux-gnu/pkgconfig
+
+# OpenSSL CLI; libssl and libcrypto stay.
+usr/bin/openssl
+
+# Interactive util-linux leftovers; no node script or documented workflow runs
+# them (less is the pager).
+usr/bin/cal
+usr/bin/hexdump
+usr/bin/look
+usr/bin/mesg
+usr/bin/more
+usr/bin/rev
+usr/bin/ul
+
+# SQLite CLI (gpg, keyboxd and liblastlog2 keep libsqlite3).
+
+# Build-time generators: e2fsprogs' compile_et/mk_cmds, libtasn1's ASN.1
+# tools, pcre2's test driver, bash's bug reporter.
+usr/bin/compile_et
+usr/bin/mk_cmds
+usr/bin/asn1Coding
+usr/bin/asn1Decoding
+usr/bin/asn1Parser
+usr/bin/pcre2test
+usr/bin/bashbug
+
+# Python scripts; the image has no Python.
+usr/bin/psl-make-dafsa
+usr/bin/routel
+usr/bin/xfs_protofile
+
+# Completions for shells the image does not ship (bash completions stay).
+usr/share/zsh
+usr/share/fish

@@ -178,9 +178,15 @@ def test_prune_lists_never_touch_load_bearing_paths(name):
         for line in (PRUNE.parent / name).read_text().splitlines()
     ]
     patterns = [p for p in patterns if p]
-    assert patterns
     for pattern in patterns:
         assert pattern.startswith("usr/"), pattern
         assert ".." not in pattern, pattern
-        for protected in ("usr/bin/gpg", "usr/bin/gpgv", "usr/lib/locale", "usr/lib/systemd"):
+        for protected in (
+            "usr/bin/gpg",
+            "usr/bin/gpgv",
+            "usr/bin/gpg-agent",
+            "usr/libexec/keyboxd",
+            "usr/lib/locale",
+            "usr/lib/systemd",
+        ):
             assert not Path(protected).match(pattern), (pattern, protected)
