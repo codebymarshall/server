@@ -2,10 +2,9 @@
 # bluefin-homelab-install — turn a USB installer boot from one of its Homelab
 # entries into a Homelab install.
 #
-# The installer's boot menu offers the installer UKI's profiles: "Bluefin
-# Server <ver>" (the default) installs Bluefin Server; "(Homelab: control
-# plane)" and "(Homelab: node)" add the bluefin.install-homelab credential
-# (control-plane | node) to the same kernel command line, and nothing else.
+# The installer defaults to Home Server; advanced minimal and the preserved
+# "(Homelab: control plane)" / "(Homelab: node)" profiles share its signed UKI.
+# Only the Homelab entries add bluefin.install-homelab (control-plane | node).
 # For those, this writes BLUEFIN_INSTALL_ARGS, which the image's
 # systemd-sysinstall drop-in appends to its command line:
 #
@@ -22,9 +21,8 @@
 #       credential or typed at the prompt on the console; never on a kernel
 #       command line or in the template on the stick
 #
-# The Server entry has no bluefin.install-homelab credential, so
-# bluefin-homelab-install.service is skipped and sysinstall runs exactly as
-# without it.
+# Home Server and advanced minimal have no bluefin.install-homelab credential,
+# so this unit is skipped. Home Server uses an independent argument helper.
 #
 # Test overrides: BLUEFIN_INSTALLER_HOMELAB (the stick's homelab directory).
 

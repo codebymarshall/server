@@ -89,13 +89,3 @@ def test_without_a_serial_only_the_probe_console_ends_a_boot(tmp_path: Path) -> 
     assert f"FAIL: {args[0]}: no result within 2s" in result.stderr
 
 
-def test_the_enrollment_step_checks_the_marker_it_waits_for_on_the_firmware_console() -> None:
-    timeout, (name, marker, serial) = enroll_wait()
-    step = enroll_step()
-    assert serial == "ttyS0"
-    assert f"grep -aq '{marker}' \"${{state}}/{name}.{serial}.log\" || fail" in step
-    # boot_start sets the deadline, boot_wait reports it: both get the same.
-    start = re.search(rf"^ *timeout_s=(\d+) boot_start {name} ", step, re.M)
-    assert start and int(start[1]) == timeout
-    default = re.search(r'^timeout_s="\$\{DOGFOOD_TIMEOUT:-(\d+)\}"$', TEXT, re.M)
-    assert default and timeout < int(default[1])

@@ -4,8 +4,8 @@ Documentation=file:/usr/libexec/bluefin-homelab-install
 Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb-installer.md
 # Pulled in by the image's systemd-sysinstall drop-in. Only the Homelab
 # entries of the installer's boot menu (installer UKI profiles) set this
-# credential; booted from the default entry, the unit is skipped and
-# sysinstall installs Bluefin Server as before.
+# credential; Home Server and advanced minimal skip this unit and preserve
+# their independent profile selection.
 ConditionCredential=bluefin.install-homelab
 RequiresMountsFor=/run/bluefin/installer
 # The same Secure Boot check as the default entry (systemd-sysinstall

@@ -75,6 +75,8 @@ config:
       cp -a systemd-src/. "%{install-root}/usr/lib/systemd/system/"
       install -Dm0755 libexec-src/bluefin-homelab-install \
         "%{install-root}/usr/libexec/bluefin-homelab-install"
+      install -Dm0755 libexec-src/bluefin-home-server-install \
+        "%{install-root}/usr/libexec/bluefin-home-server-install"
       install -Dm0755 libexec-src/bluefin-installer-secure-boot \
         "%{install-root}/usr/libexec/bluefin-installer-secure-boot"
       install -Dm0755 libexec-src/bluefin-installer-disk \

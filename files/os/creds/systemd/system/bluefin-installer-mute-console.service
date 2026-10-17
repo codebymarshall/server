@@ -14,6 +14,9 @@ Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb
 # elements/oci/bluefin-server-boot.bst sets systemd.show_status=error; keep
 # that cmdline setting (or re-mute here) if it ever changes.
 DefaultDependencies=no
+# Apply the long-lived mute after sysctl sets printk and initial setup exits
+# its own temporary mute; neither may restore output under a later prompt.
+After=systemd-sysctl.service systemd-firstboot.service
 Before=shutdown.target
 Conflicts=shutdown.target
 

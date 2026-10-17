@@ -444,7 +444,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-x86 libarchive-tools \
-            fdisk dosfstools e2fsprogs
+            fdisk dosfstools e2fsprogs mtools
           sudo chmod 666 /dev/kvm
           curl -fsSL --retry 3 -o "${RUNNER_TEMP}/edk2-ovmf.rpm" "${OVMF_RPM_URL}"
           echo "${OVMF_RPM_SHA256}  ${RUNNER_TEMP}/edk2-ovmf.rpm" | sha256sum -c -
