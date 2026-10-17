@@ -1,0 +1,94 @@
+# Bluefin Home Server: mandatory system-container Homebrew, no host Brew.
+# The published template is self-contained; templates.bst inlines the canonical
+# native runtime selector referenced below. First boot imports the machine and
+# integration sysext through the generic signed sysupdate feature fetcher.
+# Account/password/key material is privately provisioned via credentials, or
+# the owner setup service creates the nonroot account before the first console login.
+# Optional host engines and the existing Homelab/KubeStellar profile use
+# bluefin.homebrew.{podman,docker,cluster} boolean credentials. The OCI unit
+# defaults below also cover template-only netboot; explicit selections win.
+# Podman defaults on; Docker, the cluster and full federation stay off.
+variant: fcos
+version: 1.7.0
+systemd:
+  units:
+    - name: bluefin-root-password-prompt.service
+      mask: true
+    # This unit exists before the optional integration is fetched. Do not pull
+    # an unavailable sysext unit into PID 1's initial boot transaction.
+    - name: bluefin-homebrew-session-ready.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Ready the selected Homebrew environment before owner login
+        Requires=bluefin-sysext-fetch.service
+        After=bluefin-sysext-fetch.service
+        Before=getty@tty1.service sshd.service
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/systemctl start bluefin-homebrew.service
+        RemainAfterExit=yes
+        TimeoutStartSec=infinity
+        [Install]
+        WantedBy=multi-user.target
+    - name: getty@tty1.service
+      dropins:
+        - name: 50-homebrew-ready.conf
+          contents: |
+            [Unit]
+            Requires=bluefin-homebrew-session-ready.service
+            After=bluefin-homebrew-session-ready.service
+    - name: bluefin-sysext-fetch.service
+      enabled: true
+      dropins:
+        - name: 45-home-server-runtimes.conf
+          contents: |
+            [Unit]
+            Requires=bluefin-oci-features.service
+            After=bluefin-oci-features.service
+    - name: bluefin-oci-features.service
+      contents: |
+        [Unit]
+        Description=Select optional Home Server engines before fetching
+        Before=bluefin-sysext-fetch.service
+        [Service]
+        Type=oneshot
+        ImportCredential=bluefin.homebrew.profile
+        ImportCredential=bluefin.homebrew.podman
+        ImportCredential=bluefin.homebrew.docker
+        ExecStart=/usr/bin/bash /etc/bluefin-homebrew/bootstrap/bluefin-oci-features --configure-features
+        RemainAfterExit=yes
+      dropins:
+        - name: 40-home-server.conf
+          contents: |
+            [Service]
+            SetCredential=bluefin.homebrew.profile:home-server
+    - name: bluefin-oci-owner-prepare.service
+      dropins:
+        - name: 40-home-server.conf
+          contents: |
+            [Service]
+            SetCredential=bluefin.homebrew.profile:home-server
+    # The OS sshd configuration permits public keys only, never passwords.
+    - name: sshd.service
+      enabled: true
+      dropins:
+        - name: 50-homebrew-ready.conf
+          contents: |
+            [Unit]
+            Requires=bluefin-homebrew-session-ready.service
+            After=bluefin-homebrew-session-ready.service
+storage:
+  files:
+    - path: /etc/sysupdate.d/homebrew.feature.d/50-home-server.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Feature]
+          Enabled=true
+    - path: /etc/bluefin-homebrew/bootstrap/bluefin-oci-features
+      mode: 0755
+      overwrite: true
+      contents:
+        local: bluefin-oci-features

@@ -1,0 +1,86 @@
+#!/bin/bash
+# Canonical Home Server selection: sourced by owner setup, provisioned before fetch.
+set -euo pipefail
+state=${BLUEFIN_OCI_STATE_FILE:-/var/lib/bluefin-homebrew/runtimes.state}
+has_selection=false
+podman=false
+docker=false
+fail() { printf '%s: %s\n' "${0##*/}" "$*" >&2; exit 1; }
+credentials=${CREDENTIALS_DIRECTORY:-/run/credentials/bluefin-oci-owner-prepare.service}
+sysupdate_root=${BLUEFIN_SYSUPDATE_ROOT:-}
+# Let systemd merge feature/drop-in precedence, just as sysupdate does. The
+# selected engine must agree with what fetching actually enabled, including
+# an operator's later disable; never try to start an absent selected sysext.
+feature_selection() {
+    local engine config line section value
+    local -a options=()
+    [[ -z $sysupdate_root ]] || options+=(--root="$sysupdate_root")
+    for engine in podman docker; do
+        config=$(systemd-analyze "${options[@]}" cat-config "sysupdate.d/$engine.feature") || fail "cannot read $engine feature configuration"
+        section=
+        while IFS= read -r line; do
+            if [[ $line =~ ^[[:space:]]*\[([^]]+)\][[:space:]]*$ ]]; then
+                section=${BASH_REMATCH[1]}
+            elif [[ $section == Feature && $line =~ ^[[:space:]]*Enabled[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]]; then
+                value=${BASH_REMATCH[1],,}
+                case $value in
+                    1|yes|y|true|t|on) printf -v "$engine" '%s' true ;;
+                    0|no|n|false|f|off) printf -v "$engine" '%s' false ;;
+                    *) fail "$engine feature Enabled must be a boolean" ;;
+                esac
+            fi
+        done <<< "$config"
+    done
+}
+if [[ -f $credentials/bluefin.homebrew.profile && $(cat "$credentials/bluefin.homebrew.profile") == home-server ]]; then
+    podman=true
+    has_selection=true
+fi
+if [[ -f "$state" ]]; then
+    [[ ! -L "$state" && $(stat -c %u "$state") == 0 ]] || fail 'selection state must be root-owned and not a symlink'
+    mode=$(stat -c %a "$state")
+    (( (8#$mode & 0022) == 0 )) || fail 'selection state must not be group/world writable'
+    has_selection=true
+    IFS=: read -r podman docker < "$state"
+fi
+for engine in podman docker; do
+    credential="$credentials/bluefin.homebrew.$engine"
+    if [[ -f "$credential" ]]; then
+        has_selection=true
+        value=$(cat "$credential")
+        printf -v "$engine" '%s' "$value"
+    fi
+    value=${!engine}
+    case "$value" in true|false) ;; *) fail "$engine selection must be true or false" ;; esac
+done
+if [[ ${1:-} == --print-selection && $# == 1 ]]; then
+    printf '%s:%s\n' "$podman" "$docker"
+    exit 0
+fi
+[[ $# == 0 || ( $# == 1 && $1 == --configure-features ) ]] || fail 'usage: bluefin-oci-features [--print-selection|--configure-features]'
+[[ $EUID == 0 ]] || fail 'owner preparation requires root'
+if [[ ${1:-} == --configure-features ]]; then
+    [[ $has_selection == true ]] || exit 0
+    for engine in podman docker; do
+        dropindir="$sysupdate_root/etc/sysupdate.d/$engine.feature.d"
+        install -d -m0755 "$dropindir"
+        dropin="$dropindir/50-bluefin-home-server.conf"
+        managed='# Managed by bluefin-oci-features'
+        if [[ -e $dropin || -L $dropin ]]; then
+            [[ ! -L $dropin && $(stat -c %u "$dropin") == 0 ]] || fail 'feature configuration must be root-owned and not a symlink'
+            IFS= read -r firstline < "$dropin"
+            # Even a file at our default path remains the operator's if it
+            # was not created by this helper. Later drop-ins also stay intact.
+            [[ $firstline == "$managed" ]] || continue
+        fi
+        (umask 022; printf '%s\n[Feature]\nEnabled=%s\n' "$managed" "${!engine}" > "$dropin.new")
+        mv -f "$dropin.new" "$dropin"
+    done
+    feature_selection
+    install -d -m0755 "$(dirname "$state")"
+    (umask 022; printf '%s:%s\n' "$podman" "$docker" > "$state.new")
+    chown root:root "$state.new"
+    mv -f "$state.new" "$state"
+    exit 0
+fi
+[[ ${BASH_SOURCE[0]} != "$0" ]] || fail 'use --configure-features to select optional runtime extensions'

@@ -4,7 +4,7 @@ description: Add or document system containers that should behave like first-cla
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-09-07"
+  last_updated: "2026-10-16"
   context7-sources:
     - /systemd/systemd
 ---
@@ -86,6 +86,41 @@ If the toolbox is Homebrew-based, use `/home/linuxbrew` as the writable prefix.
 Set `HOMEBREW_NO_AUTO_UPDATE=1` and `HOMEBREW_NO_INSTALL_CLEANUP=1` in its
 environment so updates are explicit and the environment behaves like a standard
 Linux Homebrew installation.
+
+## Transparent Homebrew profile
+
+The optional `homebrew` sysupdate feature delivers two signed, host-version-locked
+assets: `homebrew_<ver>.raw.zst` in `/var/lib/machines` and
+`homebrew-integration_<ver>.raw.zst` in `/var/lib/extensions`. The latter contains
+the helper, restricted all-users sudo rule, lifecycle units, shell/SSH hooks and
+Python closure. None of that bridge ships in the base OS. Ship this consumer only
+with a merged producer main SHA; the producer owns its independent FSDK machine.
+
+Apply the published, self-contained `home-server.bu` through the existing
+Ignition provisioning flow. Its canonical selector runs before signed feature
+fetching; a profile-only gate starts the newly merged Homebrew service before
+console/SSH login. Explicit engine credentials, persisted selections and effective
+sysupdate drop-ins preserve operator policy and data. Podman defaults on only in
+this selected profile; Docker and the cluster stay off. Runtime activation and
+private endpoints are documented in [systemd-sysext-extensions.md](systemd-sysext-extensions.md).
+Provision a nonroot owner and private account/key credentials for headless use;
+otherwise owner setup uses the console before getty. See
+[tpm2-credential-sealing.md](tpm2-credential-sealing.md) for credential transport.
+
+Installed packages persist at `/var/lib/bluefin-homebrew/prefix`, bound into the
+machine at `/home/linuxbrew/.linuxbrew`. The root-owned owner record prevents a
+silent UID/GID change. Only the owner runs `brew`; other provisioned users execute
+installed tools with a read-only prefix. User scopes keep detached tmux sessions
+alive after SSH disconnects, without nesting host engine workloads in the machine.
+
+Dispatch preserves sudo's authenticated active primary GID, NSS supplementary
+groups and inherited descriptors. Shared cwd identity is pinned and compared in
+host and guest, then reopened under caller permissions before execution; `/`
+deliberately maps to the guest root. Environment/package argv travel in a sealed,
+caller-owned request, never sudo argv. Native allowed/denied sudo audit events
+remain enabled, and user scopes have a fixed description. Foreground PTYs relay
+input; background jobs retain their streams. Application output and independent
+system auditing remain outside this argv privacy guarantee.
 
 ## Interacting with a machine service
 

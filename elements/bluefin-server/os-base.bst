@@ -35,6 +35,7 @@ depends:
 - freedesktop-sdk.bst:components/lvm2.bst
 - freedesktop-sdk.bst:components/tpm2-tss.bst
 - freedesktop-sdk.bst:components/gnupg.bst
+- freedesktop-sdk.bst:components/libarchive.bst
 - freedesktop-sdk.bst:components/xfsprogs.bst
 - freedesktop-sdk.bst:components/e2fsprogs.bst
 - freedesktop-sdk.bst:components/dosfstools.bst

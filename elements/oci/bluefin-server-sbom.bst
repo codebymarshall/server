@@ -46,6 +46,13 @@ build-depends:
 - nvidia/nvidia-open-595.bst
 - oci/nvidia-container-toolkit-sysext.bst
 - nvidia/nvidia-container-toolkit.bst
+- homebrew/image.bst
+- oci/homebrew-integration-sysext.bst
+- homebrew/dispatch.bst
+- homebrew/image-integration.bst
+- homebrew/owner-integration.bst
+- fsdk-containers.bst:brew/brew-runtime.bst
+- fsdk-containers.bst:brew/brew-prefix.bst
 - runtimes/podman-sysext.bst
 - runtimes/podman-runtime.bst
 - runtimes/docker-sysext.bst
