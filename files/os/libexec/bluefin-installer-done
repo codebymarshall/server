@@ -31,13 +31,28 @@ if [ -r "${os_release}" ]; then
     done < "${os_release}"
 fi
 
+home_server=false
+if [ -n "${CREDENTIALS_DIRECTORY:-}" ] && [ -f "${CREDENTIALS_DIRECTORY}/bluefin.install-home-server" ]; then
+    home_server=true
+fi
 printf '%s: installed, restarting in %ss\n' "${PROG}" "${timeout}" >&2
-printf '%s\n' "" \
-    "Bluefin Server${version:+ ${version}} is installed." "" \
+if [ "${home_server}" = true ]; then
+    product="Bluefin Home Server"
+else
+    product="Bluefin Server${version:+ ${version}}"
+fi
+printf '%s\n' "" "${product} is installed." "" \
     "The machine restarts into it in ${timeout} seconds (Enter: now)." \
-    "Remove the USB stick when the screen goes blank." "" \
-    "On its first start the installed system asks here for a new root" \
-    "password; then log in as root with it." ""
+    "Remove the USB stick when the screen goes blank." ""
+if [ "${home_server}" = true ]; then
+    printf '%s\n' \
+        "On first boot, create the nonroot owner unless it was privately provisioned." \
+        "Log in as that owner; Homebrew is ready in its system container." \
+        "SSH accepts public keys only. The root account stays locked." ""
+else
+    printf '%s\n' "On its first start the installed system asks here for a new root" \
+        "password; then log in as root with it." ""
+fi
 IFS= read -r -t "${timeout}" _ || true
 printf 'Restarting.\n'
 exit 0

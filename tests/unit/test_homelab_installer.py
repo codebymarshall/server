@@ -1,7 +1,6 @@
-"""The USB installer's Homelab entries: installer UKI profiles that add only
-the bluefin.install-homelab credential, and bluefin-homelab-install, which
-turns that into extra systemd-sysinstall arguments. The default (Server)
-entry must install exactly as before."""
+"""The USB installer's preserved Homelab profiles and independent arguments.
+Advanced minimal still has no profile-specific provisioning; Home Server
+uses a separate argument variable and does not change the Homelab helpers."""
 
 from __future__ import annotations
 
@@ -21,10 +20,8 @@ SCRIPT = ROOT / "files" / "os" / "libexec" / "bluefin-homelab-install"
 UNIT = ROOT / "files" / "os" / "creds" / "systemd" / "system" / "bluefin-homelab-install.service"
 DROPIN = ROOT / "files" / "os" / "systemd" / "system" / "systemd-sysinstall.service.d" / "10-bluefin-installer.conf"
 BOOT = ROOT / "elements" / "oci" / "bluefin-server-boot.bst"
-IMAGE = ROOT / "elements" / "oci" / "bluefin-server-image.bst"
 CREDS_ELEMENT = ROOT / "elements" / "bluefin-server" / "os-creds-prov.bst"
 REPART = ROOT / "files" / "os" / "repart.d"
-FETCH = ROOT / "files" / "homelab" / "cluster" / "internal" / "host" / "sysextfetch" / "sysextfetch.go"
 STICK = "/run/bluefin/installer/bluefin/homelab"
 ENV_FILE = "/run/bluefin-homelab-install/sysinstall.env"
 
@@ -124,14 +121,14 @@ def test_unit_runs_only_from_a_homelab_entry_before_sysinstall() -> None:
     assert SCRIPT.stat().st_mode & stat.S_IXUSR
 
 
-def test_sysinstall_appends_the_homelab_arguments_and_nothing_for_server() -> None:
+def test_sysinstall_appends_independent_profile_arguments_before_the_target() -> None:
     dropin = SystemdFile(DROPIN)
     exec_start = dropin.values("Service", "ExecStart")[-1]
-    # The target disk the console question chose, if any, comes last.
-    assert exec_start.split()[-2:] == ["$BLUEFIN_INSTALL_ARGS", "$BLUEFIN_INSTALL_TARGET"]
-    # Empty (the Server entry: the unit is skipped and writes no file), a
-    # bare $VAR word expands to no argument at all; set, not just unset, so
-    # PID 1 does not log about an unset variable.
+    assert exec_start.split()[-3:] == [
+        "$BLUEFIN_INSTALL_ARGS", "$BLUEFIN_HOME_SERVER_INSTALL_ARGS", "$BLUEFIN_INSTALL_TARGET"
+    ]
+    # Empty profile variables add no argv; advanced minimal keeps its root
+    # first-boot credential. Home's template alone masks that root prompt.
     [argv] = dropin.commands()
     assert argv[-1] == "--set-credential=bluefin.prompt-root-password:1"
     assert "BLUEFIN_INSTALL_ARGS=" in dropin.words("Service", "Environment")
@@ -146,23 +143,6 @@ def boot_variable(name: str) -> str:
     return " ".join(yaml.safe_load(BOOT.read_text(encoding="utf-8"))["variables"][name].split())
 
 
-def test_homelab_entries_are_profiles_differing_only_by_a_non_secret_credential() -> None:
-    text = BOOT.read_text(encoding="utf-8")
-    assert "for role in control-plane node; do" in text
-    assert (
-        'printf \'usrhash=%s %s %s systemd.set_credential=bluefin.install-homelab:%s\' \\\n'
-        '        "${usrhash}" "%{installer-cmdline}" "%{common-cmdline}" "${role}"'
-    ) in text
-    assert "printf 'ID=homelab-%s\\nTITLE=Homelab: %s\\n'" in text
-    assert re.search(
-        r"uki bluefin-server-installer_%\{image-version\} \"%\{installer-cmdline\}\" \\\n"
-        r"\s+--join-profile=/tmp/homelab-control-plane.efi --join-profile=/tmp/homelab-node.efi",
-        text,
-    )
-    # The default profile's command line is unchanged, and no profile
-    # carries a passphrase.
-    assert "bluefin.install-homelab" not in boot_variable("installer-cmdline")
-    assert "passphrase" not in text
 
 
 def test_all_three_installer_profiles_mask_userspace_wait_online() -> None:
@@ -182,20 +162,3 @@ def test_all_three_installer_profiles_mask_userspace_wait_online() -> None:
     assert "systemd.mask=systemd-networkd-wait-online.service" not in netboot_words
     assert "systemd.mask=systemd-networkd-wait-online.service" not in disk_words
 
-
-def test_the_stick_carries_the_templates_the_seed_and_the_esp_drop_in() -> None:
-    text = IMAGE.read_text(encoding="utf-8")
-    assert 'hl="${esp}/bluefin/homelab"' in text
-    assert "/homelab-templates/homelab-control-plane.bu /homelab-templates/homelab-node.bu" in text
-    assert 'install -Dm644 -t "${hl}/extensions" /sysext/kubeadm/kubeadm_%{image-version}.raw.zst' in text
-    assert "/sysext/homelab/homelab_%{image-version}.raw.zst" in text
-    assert '(cd "${hl}/extensions" && sha256sum --binary *.raw.zst > SHA256SUMS)' in text
-    # A drop-in for the ESP definition the stick installs (10-esp.conf), in a
-    # second --definitions directory: repart reads drop-ins from every one.
-    assert (REPART / "10-esp.conf").exists()
-    assert 'mkdir -p "${hl}/repart.d/10-esp.conf.d"' in text
-    copy = f"CopyFiles={STICK}/extensions:/bluefin/extensions"
-    assert f"printf '[Partition]\\n{copy}\\n'" in text
-    # ...where bluefin-sysext-fetch looks for it on the installed disk.
-    assert 'seed = strings.TrimSuffix(esp, "/") + "/bluefin/extensions"' in FETCH.read_text(encoding="utf-8")
-    assert "SizeMinBytes=512M" in text

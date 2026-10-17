@@ -12,8 +12,9 @@ description: |
                                       USB installer: usr from the installer medium's
                                       bluefin-installer-* partitions, tmpfs root,
                                       boots into system-install.target (systemd-sysinstall);
-                                      profiles 2 and 3 (Homelab: control plane, node)
-                                      add the bluefin.install-homelab credential
+                                      first/default profile: Bluefin Server (minimal);
+                                      additional profiles: Home Server and
+                                      Homelab control plane/node
     efi-keys/{PK,KEK,db}.auth         Secure Boot enrollment payloads
     repart.d/                         disk layout: ESP, usr A/B + verity, root.
                                       Slot A is copied from the running image
@@ -245,21 +246,28 @@ config:
     }
     uki bluefin-server-netboot_%{image-version} "%{netboot-cmdline}"
     uki bluefin-server-%{image-version} "%{disk-cmdline}"
-    # The USB installer's boot menu: the default profile installs Bluefin
-    # Server; two more profiles of the same signed UKI, listed by
-    # systemd-boot as "Bluefin Server <ver> (Homelab: control plane)" and
-    # "(Homelab: node)", add only the bluefin.install-homelab credential (no
-    # secret), which bluefin-homelab-install.service turns into the Homelab
-    # install (docs/skills/usb-installer.md).
+    # Profile zero remains the minimal installer. Home Server is an explicit
+    # opt-in profile; its own os-release gives it a distinct menu title.
+    printf 'ID=minimal\n' > /tmp/minimal.profile
+    sed 's/^PRETTY_NAME=.*/PRETTY_NAME="Bluefin Home Server"/' \
+      /osrel/usr/lib/os-release > /tmp/home-server.osrel
+    printf 'ID=home-server\n' > /tmp/home-server.profile
+    printf 'usrhash=%s %s %s systemd.set_credential=bluefin.install-home-server:1' \
+      "${usrhash}" "%{installer-cmdline}" "%{common-cmdline}" > /tmp/home-server.cmdline
+    ukify build --profile=@/tmp/home-server.profile --cmdline=@/tmp/home-server.cmdline \
+      --os-release=@/tmp/home-server.osrel --output=/tmp/home-server.efi
     for role in control-plane node; do
       printf 'usrhash=%s %s %s systemd.set_credential=bluefin.install-homelab:%s' \
         "${usrhash}" "%{installer-cmdline}" "%{common-cmdline}" "${role}" > "/tmp/homelab-${role}.cmdline"
       printf 'ID=homelab-%s\nTITLE=Homelab: %s\n' "${role}" "${role/-/ }" > "/tmp/homelab-${role}.profile"
       echo "installer profile homelab-${role}: $(cat "/tmp/homelab-${role}.cmdline")"
       ukify build --profile=@"/tmp/homelab-${role}.profile" \
-        --cmdline=@"/tmp/homelab-${role}.cmdline" --output="/tmp/homelab-${role}.efi"
+        --cmdline=@"/tmp/homelab-${role}.cmdline" --os-release=@/osrel/usr/lib/os-release \
+        --output="/tmp/homelab-${role}.efi"
     done
     uki bluefin-server-installer_%{image-version} "%{installer-cmdline}" \
+      --profile=@/tmp/minimal.profile --os-release=@/osrel/usr/lib/os-release \
+      --join-profile=/tmp/home-server.efi \
       --join-profile=/tmp/homelab-control-plane.efi --join-profile=/tmp/homelab-node.efi
     cp /efi-keys/usr/share/bluefin-server/efi-keys/*.auth "%{install-root}/efi-keys/"
     ls -l "%{install-root}"

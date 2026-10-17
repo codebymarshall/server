@@ -4,9 +4,10 @@ description: The offline USB installer bluefin-server-installer_<ver>.raw. Load 
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-11"
+  last_updated: "2026-10-16"
   context7-sources:
     - /systemd/systemd
+    - /openssh/openssh-portable
 ---
 # Offline USB Installer
 
@@ -71,21 +72,20 @@ never offers it there.
 ## Using the installer
 
 This is stock `systemd-sysinstall` (systemd-sysinstall(8)); Bluefin adds no
-installer UI of its own, apart from the Secure Boot check
-([Secure Boot](#secure-boot)), the Homelab entries' one prompt
-([Homelab entries](#homelab-entries)), the target-disk question and the
-"installed" screen. Each is a small unit on the monitor, ordered around
-sysinstall, with a helper in `/usr/libexec`.
+installer UI of its own beyond small console questions ordered around it:
+Secure Boot, Home Server owner/options (or the preserved Homelab node join
+question), the target disk, and the installed screen.
 
-1. Boot the stick. systemd-boot offers **Bluefin Server <ver>** (the
-   default, booted after 3 seconds), **Bluefin Server <ver> (Homelab:
-   control plane)** and **(Homelab: node)**; the steps below are the
-   default's. The installer UKI sets the `firstboot.keymap` credential
-   (`us`), so `systemd-firstboot` asks nothing, and the screen goes straight to
-   the disk question, once the [Secure Boot](#secure-boot)
-   check has passed: silently when Secure Boot is on with the Bluefin Server
-   keys, otherwise only after its warning.
-2. **Target disk.** `bluefin-installer-disk.service` lists every disk
+1. Boot the stick. **Bluefin Server <ver>** (minimal) is first and selected after 3 seconds.
+   **Bluefin Home Server** is an explicit opt-in; both Homelab entries remain.
+   All are profiles of one signed UKI; only Home adds `bluefin.install-home-server=1`.
+   Home's `.osrel` sets `PRETTY_NAME`; `.profile` uses `ID=home-server` without `TITLE`.
+   `firstboot.keymap=us` avoids a keymap prompt. Secure Boot is checked first.
+2. **Owner/options.** Choose a nonroot owner; Enter defers creation to first boot.
+   Accounts/keys are private, never baked in. Homebrew is included; Podman defaults
+   **on**, Docker and Homelab/KubeStellar **off**. Docker clients use Podman's API
+   unless Docker is selected. Federation stays off. `q`/EOF cancels; minimal skips this.
+3. **Target disk.** `bluefin-installer-disk.service` lists every disk
    sysinstall can install to, numbered, with its size, model and
    `/dev/disk/by-id/` name (model and serial), for example:
 
@@ -109,44 +109,39 @@ sysinstall, with a helper in `/usr/libexec`.
    for it again; it still checks that the install fits. Upstream v261's own
    question shows one by-id name per disk and no size, and pre-fills the
    names' common prefix, so picking one of several disks needed Ctrl-U first.
-3. **Summary.** The chosen disk is always erased (`--erase=yes`), whatever
+4. **Summary.** The chosen disk is always erased (`--erase=yes`), whatever
    it holds (an earlier install, another OS), and the
    install is registered in the firmware boot menu (`--variables=yes`). Type
    `yes` to begin. This is the only confirmation.
-4. sysinstall installs. When it succeeds, `bluefin-installer-done.service`
+5. sysinstall installs. When it succeeds, `bluefin-installer-done.service`
    shows:
 
    ```text
-   Bluefin Server 26.10.1 is installed.
+   Bluefin Home Server is installed.
 
    The machine restarts into it in 15 seconds (Enter: now).
    Remove the USB stick when the screen goes blank.
 
-   On its first start the installed system asks here for a new root
-   password; then log in as root with it.
+   On first boot, create the nonroot owner unless it was privately provisioned.
+   Log in as that owner; Homebrew is ready in its system container.
+   SSH accepts public keys only. The root account stays locked.
    ```
 
    and the machine **restarts by itself**. The stick stays in until the
    screen is blank: the installer's /usr is on it until then. Left in, the
    firmware normally starts the new install anyway, which sysinstall put
    first in its boot order.
-5. **First boot of the installed disk** asks, on the monitor (tty1), for a new
-   **root password**, then asks again to confirm. It shows what you type unless
-   you press **Tab** first. Then log in as `root` with it at the
-   `<hostname> login:` prompt. The prompt is stock
-   `systemd-firstboot --prompt-root-password`, which reads an empty answer as
-   "skip" and locks root with `!*`; `bluefin-root-password-prompt` then says
-   that root needs a password and asks again (`--force`), until root has one.
-   A `passwd.*.root` credential answers it instead (see "First-boot prompts"
-   below).
-6. **The login banner** above that prompt shows the node's hostname, its
-   addresses on every interface, and how to reach it over SSH once SSH is
-   enabled (see [Console banner](#console-banner)), followed by the version
-   and update state.
+6. **First boot of Home Server** creates the private or console owner, seeds the
+   writable prefix and starts nspawn before login. Brew tools run inside it.
+   SSH is key-only; `sshd`'s `SetEnv PATH` exposes root-owned shims even to non-login
+   remote commands. Root stays locked. **Advanced minimal and Homelab** preserve
+   the tty1 root-password prompt, answered by a `passwd.*.root` credential when supplied.
+7. **The login banner** shows the hostname, addresses and update status
+   (see [Console banner](#console-banner)).
 
-Only these cancel: `q` at the disk question, and an empty answer or `no` at
-sysinstall's confirmation (`Installation not confirmed, cancelling.`). A
-wrong disk number is asked again, and anything else upstream does not accept
+Home Server owner/options accept `q` to cancel; the disk question also
+accepts `q`, and sysinstall's confirmation cancels on empty or `no`.
+A wrong disk number is asked again, and anything else upstream does not accept
 is rejected with `Invalid input …` and the same prompt asked again, so a
 mistyped answer never ends the install. A cancelled disk question fails its
 unit, so sysinstall never starts and no disk is touched.
@@ -154,9 +149,9 @@ unit, so sysinstall never starts and no disk is touched.
 After cancellation or failure, `FailureAction=none` keeps the machine up and
 sysinstall's own error on the monitor. The RAM journal survives until power-off:
 `journalctl -b -k` and `journalctl -u systemd-sysinstall` (over SSH with the
-developer-mode credentials below). `--mute-console=yes` and
-`bluefin-installer-mute-console.service`, combined with `quiet loglevel=4
-systemd.show_status=error`, keep new kernel and PID 1 noise off the prompts.
+developer-mode credentials below). The long-lived mute starts after sysctl and
+firstboot, so neither restores printk under a prompt. Together with
+`--mute-console=yes` and `quiet loglevel=4 systemd.show_status=error`, it keeps kernel and PID 1 noise off the prompts.
 The Secure Boot warning, disk chooser and Homelab join prompt clear earlier
 output and scrollback before drawing, never on exit, preserving cancellation
 reasons. A failure after erasure leaves the disk blank
@@ -164,13 +159,13 @@ reasons. A failure after erasure leaves the disk blank
 
 The `DOGFOOD_CONSOLE_*` runs in [ddi-installer-build.md](ddi-installer-build.md) check this in QEMU.
 
-The installed disk is identical to one a diskless node installs: stock
-`systemd-sysinstall` with the layout from `files/os/repart.d/` (see
-[ddi-installer.md](ddi-installer.md), "Installing to disk"). It updates
-itself from the official releases with no further steps, and its login
-banner shows the version, the last update check and any update error; see
-"Update health on the node" in
-[systemd-sysupdate-verification.md](systemd-sysupdate-verification.md).
+All profiles use stock `systemd-sysinstall` and the same discoverable
+partition layout from `files/os/repart.d/` ([ddi-installer.md](ddi-installer.md)).
+Home Server and Homelab share `bluefin/extensions/` on the stick. Both ESP sizes
+are payload-bounded (25% slack plus reserve); `check-image` rejects installers ≥4 GiB.
+First boot imports selected features; `/var/lib/machines` receives the Brew image.
+Installed nodes update from official releases; the login banner shows version and
+update health ([systemd-sysupdate-verification.md](systemd-sysupdate-verification.md)).
 
 ## Console banner
 
@@ -198,25 +193,24 @@ Console's address and login ([homelab-profile.md](homelab-profile.md)).
 
 ## Homelab entries
 
-The two Homelab entries install the same OS onto the chosen disk, with the
-same prompts, and make it a homelab control plane or node
-([homelab-profile.md](homelab-profile.md)) without a network during the
-install:
+The preserved Homelab entries install the same OS onto the chosen disk,
+with the same disk/confirmation prompts, and make it a homelab control
+plane or node ([homelab-profile.md](homelab-profile.md)) without a network
+during the install; they do not select Homebrew implicitly.
 
 - They are profiles of the one signed installer UKI. Each adds
   `systemd.set_credential=bluefin.install-homelab:control-plane` (or `:node`)
   to the default entry's kernel command line, and nothing else; no secret is
   on a command line or in a UKI.
 - `bluefin-homelab-install.service` (pulled in by the sysinstall drop-in,
-  `ConditionCredential=bluefin.install-homelab`, so the default entry skips
-  it) writes `BLUEFIN_INSTALL_ARGS` into
-  `/run/bluefin-homelab-install/sysinstall.env`, which the drop-in's
-  `ExecStart=` appends (the drop-in's default is empty, and an empty
-  `$BLUEFIN_INSTALL_ARGS` is no argument at all):
+  `ConditionCredential=bluefin.install-homelab`, so Home Server and advanced
+  minimal skip it) writes `BLUEFIN_INSTALL_ARGS` into
+  `/run/bluefin-homelab-install/sysinstall.env`. The sysinstall drop-in
+  appends this independently from Home Server's
+  `BLUEFIN_HOME_SERVER_INSTALL_ARGS`; empty variables add no arguments.
   - `--definitions=/run/bluefin/installer/bluefin/homelab/repart.d`, whose
     `10-esp.conf.d/50-bluefin-homelab.conf` adds a `CopyFiles=` of the
-    stick's `bluefin/homelab/extensions/` (the kubeadm and homelab sysexts
-    and the homelab add-ons of this version, and their `SHA256SUMS`) to the installed ESP's
+    stick's shared `bluefin/extensions/` and its `SHA256SUMS` to the installed ESP's
     `/bluefin/extensions/`. On the first boot `bluefin-sysext-fetch.service`
     installs them from there and deletes the copy.
   - `--load-credential=ignition.config:/run/bluefin/installer/bluefin/homelab/homelab-<role>.bu`:
@@ -239,6 +233,25 @@ k0s is not offered here; use its templates ([homelab-profile.md](homelab-profile
 `scripts/dogfood-homelab-installer.sh` (`just dogfood-homelab-installer`)
 installs a control plane (with a TPM2) and then a node from the stick, with
 the network off, and checks that they form a cluster.
+
+## Home Server profile credentials
+
+`bluefin-home-server-install.service` handles `bluefin.install-home-server=1`, writing private `BLUEFIN_HOME_SERVER_INSTALL_ARGS` separately from Homelab.
+
+| Credential | Value / default |
+|---|---|
+| `bluefin.homebrew.profile` | `home-server` |
+| `bluefin.homebrew.owner` | Nonroot name; absent interactively means first-boot creation |
+| `bluefin.homebrew.podman` | Boolean, true by default |
+| `bluefin.homebrew.docker` | Boolean, false by default |
+| `bluefin.homebrew.cluster` | Boolean, false; canonical Homelab/KubeStellar, federation off |
+
+Unattended USB installs require private owner and `passwd.hashed-password.<owner>` (`*` permits key-only accounts). Supply public keys through `ssh.authorized_keys.<owner>`: both preparation units import them and write the owner's `.ssh` (0700) and `authorized_keys` (0600) after dropping filesystem authority to that UID/GID. No key credential preserves existing keys. Snapshot sysusers/tmpfiles/password/key credentials privately: mounts are unit-private; sysinstall seals them to TPM when available. Never use public null-key credentials for secrets. Invalid owner/booleans fail before erasure.
+
+The published profile also works outside USB. Its bootstrap, paired machine/integration assets, owner persistence and dispatch trust boundaries are documented in [system-containers.md](system-containers.md); runtime activation remains opt-in as described there.
+
+Optional cluster composition retains canonical Homelab/add-on/Gateway configuration, removes only its sample OS-root account/key, and keeps Home root locked. The SSH owner and Console administrator are separate identities: no general sudo or admin kubeconfig copy. The local/serial banner provides `https://kubestellar.<HOMELAB_DOMAIN>` and the generated-once dedicated `admin` password from `kubestellar-console-login`, written only to private `/run/issue.d/51-kubestellar-console.issue` (0600), not the journal. Read it at the physical console and log in from the LAN; headless use requires private console/management access. HTTPS/DNS requirements and shared-admin limits remain in [homelab-profile.md](homelab-profile.md); per-owner enrollment/recovery is not implemented by this option.
+
 
 ## Unattended installs
 
@@ -269,9 +282,10 @@ a password prompt. The
 `systemd-firstboot.service.d/10-bluefin-no-root-prompt.conf` drop-in removes
 that prompt from `systemd-firstboot.service`.
 
-A disk installed from the stick needs a way in, so the installer's drop-in
-passes `--set-credential=bluefin.prompt-root-password:1` to sysinstall, which
-stores it next to the installed UKI. On that disk's first boot
+A disk installed using advanced minimal or Homelab needs a way in, so the
+installer's drop-in passes `--set-credential=bluefin.prompt-root-password:1`
+to sysinstall, which stores it next to the installed UKI. Home Server's
+Ignition template masks that root prompt in favor of nonroot owner setup.
 `bluefin-root-password-prompt.service` (`ConditionCredential=` on it, and
 `ConditionFirstBoot=yes`) runs stock `systemd-firstboot --prompt-root-password`
 on tty1, the monitor (the disk UKI's `/dev/console` is the serial port),

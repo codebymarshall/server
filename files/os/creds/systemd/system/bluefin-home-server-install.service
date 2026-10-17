@@ -1,0 +1,31 @@
+[Unit]
+Description=Prepare the Bluefin Home Server native installer profile
+Documentation=file:/usr/libexec/bluefin-home-server-install
+Documentation=https://github.com/projectbluefin/server/blob/main/docs/skills/usb-installer.md
+ConditionCredential=bluefin.install-home-server
+RequiresMountsFor=/run/bluefin/installer
+After=bluefin-installer-secure-boot.service
+Wants=bluefin-installer-mute-console.service
+After=bluefin-installer-mute-console.service
+After=systemd-vconsole-setup.service systemd-firstboot.service
+Before=bluefin-installer-disk.service systemd-sysinstall.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+RuntimeDirectory=bluefin-home-server-install
+RuntimeDirectoryMode=0700
+ImportCredential=bluefin.install-home-server
+ImportCredential=bluefin.install-homelab
+ImportCredential=bluefin.homebrew.*
+ImportCredential=sysusers.extra
+ImportCredential=tmpfiles.extra
+ImportCredential=passwd.hashed-password.*
+ImportCredential=ssh.authorized_keys.*
+ImportCredential=systemd.unit-dropin.systemd-sysinstall.service*
+ExecCondition=/usr/bin/systemctl is-active --quiet bluefin-installer-secure-boot.service
+ExecStart=/usr/libexec/bluefin-home-server-install
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/console

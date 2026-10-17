@@ -164,6 +164,7 @@ DOGFOOD_INSTALL=console just dogfood-installer      # typed at the monitor: disk
 DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_NOISE=1 just dogfood-installer  # ...while the guest logs kernel and journal errors: none may reach the disk, summary or done screen
 DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_FAILURE=kernel just dogfood-installer  # ...but sysinstall fails on a missing disk UKI before any disk write: error on the monitor, machine up, journal kept
 DOGFOOD_INSTALL=console DOGFOOD_CONSOLE_HOLD=8 just dogfood-installer  # ...holding each prompt on the monitor 8 s (2-8, default 3)
+DOGFOOD_PROFILE=home-server DOGFOOD_INSTALL=console just dogfood-installer # Home options, nonroot owner creation/login, SSH Brew and host-engine workloads
 ```
 
 `scripts/dogfood-installer.sh` recreates `DOGFOOD_STATE` (default
