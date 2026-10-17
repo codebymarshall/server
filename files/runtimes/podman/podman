@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/lib/bluefin/podman/bin:/usr/lib/bluefin/podman/libexec/podman:/usr/bin:/usr/sbin"
+export LD_LIBRARY_PATH="/usr/lib/bluefin/podman/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+if [ -z "${CONTAINERS_STORAGE_CONF:-}" ] && \
+   [ ! -f "${XDG_CONFIG_HOME:-$HOME/.config}/containers/storage.conf" ] && \
+   [ ! -f /etc/containers/storage.conf ]; then
+    export CONTAINERS_STORAGE_CONF=/usr/lib/bluefin/podman/storage.conf
+fi
+# A module augments defaults without replacing the user's containers.conf.
+exec /usr/lib/bluefin/podman/bin/podman --module /usr/lib/bluefin/podman/containers.conf "$@"

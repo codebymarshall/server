@@ -34,6 +34,8 @@ description: |
     zfs_<ver>.raw.zst, kubestellar_<ver>.raw.zst, kubeadm_<ver>.raw.zst,
     homelab_<ver>.raw.zst, argo-workflows_<ver>.raw.zst, mcp_<ver>.raw.zst,
     nvidia-open-595_<ver>.raw.zst          opt-in sysexts locked to this image version
+    podman_<ver>.raw.zst, docker_<ver>.raw.zst
+                                           opt-in rootless host engine sysexts
     k0s-<k0s-ver>.raw.zst                  opt-in k0s sysext (own version axis)
     nvidia-container-toolkit-<ctk-ver>.raw.zst
                                            opt-in NVIDIA Container Toolkit sysext
@@ -104,6 +106,12 @@ build-depends:
 - filename: homelab/homelab-templates.bst
   config:
     location: /homelab-templates
+- filename: runtimes/podman-sysext.bst
+  config:
+    location: /sysext/podman
+- filename: runtimes/docker-sysext.bst
+  config:
+    location: /sysext/docker
 
 variables:
   image-name: bluefin-server_%{image-version}
@@ -271,6 +279,8 @@ config:
        /sysext/mcp/mcp_%{image-version}.raw.zst \
        /sysext/nvidia-open-595/nvidia-open-595_%{image-version}.raw.zst \
        /sysext/nvidia-container-toolkit/nvidia-container-toolkit-*.raw.zst "%{install-root}/"
+    cp /sysext/podman/podman_%{image-version}.raw.zst \
+       /sysext/docker/docker_%{image-version}.raw.zst "%{install-root}/"
     install -m644 -t "%{install-root}" /homelab-templates/*.bu /homelab-templates/*.ign
 
   - |

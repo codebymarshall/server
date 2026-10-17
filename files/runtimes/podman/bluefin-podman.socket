@@ -1,0 +1,11 @@
+[Unit]
+Description=Owner-authorized rootless Podman API
+ConditionUser=!root
+
+[Socket]
+ListenStream=%t/bluefin-podman/api.sock
+SocketMode=0600
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target

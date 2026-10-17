@@ -4,7 +4,7 @@ description: Extensibility via systemd-sysext and systemd-confext for Bluefin Se
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-05"
+  last_updated: "2026-10-16"
   context7-sources:
     - /systemd/systemd
 ---
@@ -112,6 +112,20 @@ QEMU, and `DOGFOOD_SYSEXT=nvidia scripts/dogfood-install.sh` (or
 update and a rollback. Their units skip themselves on a node without an
 NVIDIA GPU, and `nvidia-flavour-guard.service` fails when two flavours are
 merged.
+
+The optional **Podman** and **Docker** host engines use the same version-locked
+scheme (`runtimes/{podman,docker}-sysext.bst`, features `podman` and `docker`).
+Both features and their user units default off; no rootful socket is created.
+Their private `/usr/lib/bluefin/{podman,docker}` binaries and separate state do
+not replace Kubernetes' containerd or CNI. Podman is composed from FSDK; Docker
+uses digest-pinned upstream static binaries plus the FSDK rootless support closure.
+An administrator must provision non-overlapping subordinate UID/GID ranges and
+enable lingering for the intended nonroot user. After enabling/fetching the
+chosen feature and merging its sysext, that user runs `systemctl --user daemon-reload`
+then `systemctl --user enable --now bluefin-podman.socket` or
+`systemctl --user enable --now bluefin-docker.service`. The private endpoints are
+`$XDG_RUNTIME_DIR/bluefin-podman/api.sock` and
+`$XDG_RUNTIME_DIR/bluefin-docker/api.sock`; no client or engine enters base `/usr`.
 
 The **homelab** sysext (`oci/homelab-sysext.bst`, `homelab_<image-version>.raw`,
 sysupdate feature `homelab`) is version-locked the same way and carries no

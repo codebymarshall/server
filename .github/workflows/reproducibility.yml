@@ -46,6 +46,8 @@ jobs:
         oci/nvidia-container-toolkit-sysext.bst
         bluefin-server/os-sd-boot-signed.bst
         homelab/homelab-templates.bst
+        runtimes/podman-sysext.bst
+        runtimes/docker-sysext.bst
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
