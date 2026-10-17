@@ -3,8 +3,7 @@
 # dlopen()s, or executes from a unit or udev rule. `just check-image` enforces
 # that for every build; see docs/skills/ddi-installer-build.md.
 
-# ICU (~40 MB): its only consumer is xfs_scrub, which ships no units.
-usr/lib/*-linux-gnu/libicu*.so*
+# Keep ICU shared libraries: shipped libxml2 links them. Remove only its tools/data.
 usr/share/icu
 usr/bin/derb
 usr/bin/escapesrc

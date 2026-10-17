@@ -1,0 +1,9 @@
+d /var/lib/bluefin-homebrew 0755 root root -
+d /var/lib/bluefin-homebrew/commands 0755 root root -
+d /etc/bluefin-homebrew 0755 root root -
+d /etc/profile.d 0755 root root -
+d /etc/sudoers.d 0750 root root -
+L+ /etc/profile.d/90-bluefin-homebrew.sh - - - - /usr/lib/bluefin-homebrew/90-bluefin-homebrew.sh
+L+ /etc/sudoers.d/bluefin-homebrew - - - - /usr/lib/bluefin-homebrew/bluefin-homebrew.sudoers
+d /etc/ssh/sshd_config.d 0755 root root -
+L+ /etc/ssh/sshd_config.d/90-bluefin-homebrew.conf - - - - /usr/lib/bluefin-homebrew/sshd.conf

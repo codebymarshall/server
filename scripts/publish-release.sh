@@ -105,6 +105,8 @@ expected_patterns() {
         "homelab_${v}\\.raw\\.zst" \
         "argo-workflows_${v}\\.raw\\.zst" \
         "mcp_${v}\\.raw\\.zst" \
+        "homebrew_${v}\\.raw\\.zst" \
+        "homebrew-integration_${v}\\.raw\\.zst" \
         "podman_${v}\\.raw\\.zst" \
         "docker_${v}\\.raw\\.zst" \
         "nvidia-open-595_${v}\\.raw\\.zst" \
@@ -116,6 +118,7 @@ expected_patterns() {
     for t in homelab-control-plane homelab-node homelab-k0s-control-plane homelab-k0s-node; do
         printf '%s\\.bu\n%s\\.ign\n' "${t}" "${t}"
     done
+    printf '%s\\.bu\n' home-server home-server-cluster
 }
 
 cmd_verify() {
@@ -287,9 +290,11 @@ In the names below, \`<ver>\` is \`${ver}\` and \`<uuid>\` identifies a partitio
 | \`homelab_<ver>.raw.zst\` | Optional homelab cluster tooling extension. |
 | \`argo-workflows_<ver>.raw.zst\`, \`mcp_<ver>.raw.zst\`, \`kubestellar_<ver>.raw.zst\` | Optional homelab extensions: Argo Workflows, MCP server and KubeStellar Console. |
 | \`zfs_<ver>.raw.zst\` | Optional OpenZFS extension. |
-| \`podman_<ver>.raw.zst\`, \`docker_<ver>.raw.zst\` | Optional rootless host engine extensions; user units are disabled by default. |
 | \`nvidia-open-595_<ver>.raw.zst\`, \`nvidia-container-toolkit-<toolkit-version>.raw.zst\` | Optional NVIDIA open kernel modules and Container Toolkit extensions. |
 | \`homelab-*.bu\`, \`homelab-*.ign\` | Editable Butane YAML and rendered Ignition JSON provisioning templates for control-plane/node roles, with kubeadm or k0s. Customise before use. |
+| \`homebrew_<ver>.raw.zst\`, \`homebrew-integration_<ver>.raw.zst\` | Homebrew system container and optional host-integration extension; installed packages persist separately from the immutable runtime. |
+| \`podman_<ver>.raw.zst\`, \`docker_<ver>.raw.zst\` | Rootless host engine extensions; Home Server selects Podman by default. |
+| \`home-server*.bu\` | Home installer profiles, with an optional existing Homelab cluster. |
 | \`bluefin-server_<ver>.spdx.json\` | SPDX software bill of materials (SBOM), listing the image's components. |
 | \`SHA256SUMS\`, \`SHA256SUMS.gpg\` | Release asset checksums and their detached signature. |
 | GitHub's \`Source code\` archives | Repository source for developers; not bootable images. |

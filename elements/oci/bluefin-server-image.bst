@@ -36,6 +36,11 @@ description: |
     nvidia-open-595_<ver>.raw.zst          opt-in sysexts locked to this image version
     podman_<ver>.raw.zst, docker_<ver>.raw.zst
                                            opt-in rootless host engine sysexts
+    homebrew_<ver>.raw.zst                 immutable Homebrew system container;
+                                           writable packages persist separately
+    homebrew-integration_<ver>.raw.zst     opt-in host bridge and Python runtime
+                                           sysext, locked to this image version
+    home-server.bu, home-server-cluster.bu  opt-in Home Ignition profiles
     k0s-<k0s-ver>.raw.zst                  opt-in k0s sysext (own version axis)
     nvidia-container-toolkit-<ctk-ver>.raw.zst
                                            opt-in NVIDIA Container Toolkit sysext
@@ -106,6 +111,15 @@ build-depends:
 - filename: homelab/homelab-templates.bst
   config:
     location: /homelab-templates
+- filename: homebrew/image.bst
+  config:
+    location: /homebrew-machine
+- filename: oci/homebrew-integration-sysext.bst
+  config:
+    location: /sysext/homebrew-integration
+- filename: homebrew/templates.bst
+  config:
+    location: /homebrew-templates
 - filename: runtimes/podman-sysext.bst
   config:
     location: /sysext/podman
@@ -281,6 +295,9 @@ config:
        /sysext/nvidia-container-toolkit/nvidia-container-toolkit-*.raw.zst "%{install-root}/"
     cp /sysext/podman/podman_%{image-version}.raw.zst \
        /sysext/docker/docker_%{image-version}.raw.zst "%{install-root}/"
+    cp /homebrew-machine/homebrew_%{image-version}.raw.zst \
+       /sysext/homebrew-integration/homebrew-integration_%{image-version}.raw.zst "%{install-root}/"
+    install -m644 -t "%{install-root}" /homebrew-templates/home-server*.bu
     install -m644 -t "%{install-root}" /homelab-templates/*.bu /homelab-templates/*.ign
 
   - |

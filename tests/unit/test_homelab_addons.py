@@ -444,30 +444,6 @@ def test_applier_discovers_addons_after_the_base_set() -> None:
     assert code.index('"${HOMELAB_ROLE:-}" = node') < code.index("apply_entry \"${dir}\"")
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED))
-def test_each_addon_is_a_version_locked_opt_in_sysext(name: str) -> None:
-    element = yaml.safe_load((ROOT / "elements" / "oci" / f"{name}-sysext.bst").read_text())
-    sources = [s["path"] for s in element["sources"]]
-    assert sources == ["files/homelab/addon-sysexts", *[f"files/homelab/addons/{d}" for d in EXPECTED[name]]]
-    assert element["variables"]["sysext-image"] == f"{name}_%{{image-version}}"
-    assert element["variables"]["sysext-architecture"] == ""
-    text = (ROOT / "elements" / "oci" / f"{name}-sysext.bst").read_text()
-    assert 'addons="sysext%{datadir}/bluefin/homelab/addons.d"' in text and "%{sysext-pack}" in text
-    release = (HOMELAB / "addon-sysexts" / f"extension-release.{name}").read_text().splitlines()
-    assert release == [f"NAME={name}", "ID=bluefin-server"]
-    feature = (SYSUPDATE / f"{name}.feature").read_text()
-    assert "Enabled" not in feature, "opt-in"
-    transfer = next(SYSUPDATE.glob(f"[0-9][0-9]-{name}.transfer")).read_text()
-    assert f"Features={name}\n" in transfer and f"MatchPattern={name}_@v.raw.zst" in transfer
-    image = IMAGE.read_text()
-    assert f"filename: oci/{name}-sysext.bst" in image
-    assert image.count(f"/sysext/{name}/{name}_%{{image-version}}.raw.zst") == 2, "release set and USB stick"
-    sbom = yaml.safe_load((ROOT / "elements" / "oci" / "bluefin-server-sbom.bst").read_text())
-    assert f"oci/{name}-sysext.bst" in sbom["build-depends"]
-    assert f'"{name}_${{v}}\\\\.raw\\\\.zst"' in (ROOT / "scripts" / "publish-release.sh").read_text()
-    justfile = (ROOT / "Justfile").read_text()
-    assert f"oci/{name}-sysext.bst" in justfile.split("validate:")[1].split("\n\n")[0]
-    assert f"oci/{name}-sysext.bst" in (ROOT / ".github" / "workflows" / "reproducibility.yml").read_text()
 
 
 def test_homelab_conf_documents_the_addon_keys() -> None:

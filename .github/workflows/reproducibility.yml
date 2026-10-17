@@ -46,6 +46,9 @@ jobs:
         oci/nvidia-container-toolkit-sysext.bst
         bluefin-server/os-sd-boot-signed.bst
         homelab/homelab-templates.bst
+        homebrew/image.bst
+        oci/homebrew-integration-sysext.bst
+        homebrew/templates.bst
         runtimes/podman-sysext.bst
         runtimes/docker-sysext.bst
     steps:

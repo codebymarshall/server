@@ -99,8 +99,11 @@ def test_version_locked_sysexts_are_optional_features(name: str, transfer: str |
     t = ini(SYSUPDATE / transfer)
     assert name in t["Transfer"]["Features"].split()
     assert t["Transfer"]["ProtectVersion"] == "%A"
-    assert t["Target"]["Path"] == "/var/lib/extensions"
-    assert t["Target"]["MatchPattern"] == f"{name}_@v.raw"
+    machine = transfer == "40-homebrew.transfer"
+    asset = "homebrew-integration" if transfer == "39-homebrew-integration.transfer" else name
+    assert t["Target"]["Path"] == ("/var/lib/machines" if machine else "/var/lib/extensions")
+    assert t["Target"]["MatchPattern"] == f"{asset}_@v.raw"
+    assert t["Source"]["MatchPattern"] == f"{asset}_@v.raw.zst"
 
 
 @pytest.mark.parametrize("name", _feature_names())
@@ -141,10 +144,7 @@ def test_sysupdate_feature_definition_parses(name: str) -> None:
 
 
 def test_no_sysupdate_feature_or_transfer_is_orphaned() -> None:
-    """Each ``*.feature`` file pairs with exactly one ``*.transfer``.
-
-    systemd-sysupdate itself allows several transfers per feature; the
-    one-transfer rule is this repo's convention (one sysext per feature).
+    """Each feature enables transfers, and every transfer names a known feature.
 
     ``updatectl features`` reads feature definitions; ``systemd-sysupdate
     update`` looks up the transfer that installs each enabled feature's
@@ -163,11 +163,6 @@ def test_no_sysupdate_feature_or_transfer_is_orphaned() -> None:
         f"feature {sorted(referenced - features)}"
     )
 
-    duplicates = {name: names for name, names in transfers_by_feature.items() if len(names) > 1}
-    assert not duplicates, (
-        f"repo convention: each feature ships exactly one sysext transfer "
-        f"(MatchPattern <feature>_@v.raw); found several for {duplicates}"
-    )
 
 
 
