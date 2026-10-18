@@ -1,6 +1,33 @@
-# Pruned from the initrd only, after common.list. Empty today: everything the
-# initrd drops is also dropped from /usr and lives in common.list. The initrd
-# keeps gpg, gpgv, gpg-agent and keyboxd to verify SHA256SUMS.gpg, and the
-# wider GnuPG and lvm2 tool sets that /usr prunes in usr.list, because
-# bluefin-server-boot.bst builds it from its own stack (initrd-stack.bst),
-# whose lvm2 udev rules systemd-veritysetup needs.
+# Pruned from the initrd only, after common.list. The initrd keeps gpg, gpgv,
+# gpg-agent and keyboxd to verify SHA256SUMS.gpg, and the wider GnuPG and lvm2
+# tool sets that /usr prunes in usr.list, because bluefin-server-boot.bst
+# builds it from its own stack (initrd-stack.bst), whose lvm2 udev rules
+# systemd-veritysetup needs.
+
+# ICU arrives with xfsprogs (extra-fs.bst); only xfs_scrub, pruned in
+# common.list, links it. Nothing in the initrd links libxml2 or libarchive,
+# the reason /usr keeps libicuuc and libicudata.
+usr/lib/*-linux-gnu/libicu*.so*
+
+# xfsprogs beyond formatting and boot-time repair: systemd-repart runs
+# mkfs.xfs, fsck.xfs -f runs xfs_repair, and systemd-growfs grows XFS by
+# ioctl. No initrd unit or script runs the rest.
+usr/bin/xfs_admin
+usr/bin/xfs_bmap
+usr/bin/xfs_copy
+usr/bin/xfs_db
+usr/bin/xfs_estimate
+usr/bin/xfs_freeze
+usr/bin/xfs_fsr
+usr/bin/xfs_growfs
+usr/bin/xfs_info
+usr/bin/xfs_io
+usr/bin/xfs_logprint
+usr/bin/xfs_mdrestore
+usr/bin/xfs_metadump
+usr/bin/xfs_mkfile
+usr/bin/xfs_ncheck
+usr/bin/xfs_property
+usr/bin/xfs_quota
+usr/bin/xfs_rtcp
+usr/bin/xfs_spaceman

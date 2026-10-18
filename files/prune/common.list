@@ -3,7 +3,13 @@
 # dlopen()s, or executes from a unit or udev rule. `just check-image` enforces
 # that for every build; see docs/skills/ddi-installer-build.md.
 
-# Keep ICU shared libraries: shipped libxml2 links them. Remove only its tools/data.
+# ICU arrives with xfsprogs (xfs_scrub). /usr keeps libicuuc and libicudata:
+# libxml2 links them, and libarchive links libxml2. The other ICU libraries
+# link only each other; the tools and data go too.
+usr/lib/*-linux-gnu/libicui18n.so*
+usr/lib/*-linux-gnu/libicuio.so*
+usr/lib/*-linux-gnu/libicutu.so*
+usr/lib/*-linux-gnu/libicutest.so*
 usr/share/icu
 usr/bin/derb
 usr/bin/escapesrc
@@ -37,6 +43,10 @@ usr/lib/*-linux-gnu/liblsan.so*
 usr/lib/*-linux-gnu/libtsan.so*
 usr/lib/*-linux-gnu/libubsan.so*
 
+# Detached debug info for ld.so and glibc's dwz file; only gdb and valgrind
+# read it, and neither ships.
+usr/lib/debug
+
 # SQLite CLI (gpg keeps libsqlite3) and the GnuPG tools beyond signature
 # verification; both trees keep gpg, gpgv, gpg-agent and keyboxd.
 usr/bin/sqlite3
@@ -50,3 +60,45 @@ usr/bin/gpgsplit
 usr/bin/gpgparsemail
 usr/libexec/gpg-wks-client
 usr/libexec/scdaemon
+
+# libgcrypt's developer tools; libgcrypt stays.
+usr/bin/mpicalc
+usr/bin/hmac256
+usr/bin/dumpsexp
+
+# cracklib tools and its uncompiled word list: no pw_dict is built into either
+# tree, so only create-cracklib-dict ever read it. libpwquality keeps libcrack.
+usr/bin/cracklib-*
+usr/bin/create-cracklib-dict
+usr/share/cracklib
+
+# OpenSSL CLI; libssl and libcrypto stay.
+usr/bin/openssl
+
+# Interactive util-linux leftovers; no node script or documented workflow runs
+# them (less is the pager).
+usr/bin/cal
+usr/bin/hexdump
+usr/bin/look
+usr/bin/mesg
+usr/bin/more
+usr/bin/rev
+usr/bin/ul
+
+# Build-time generators: e2fsprogs' compile_et/mk_cmds, libtasn1's ASN.1
+# tools, pcre2's test driver, bash's bug reporter.
+usr/bin/compile_et
+usr/bin/mk_cmds
+usr/bin/asn1Coding
+usr/bin/asn1Decoding
+usr/bin/asn1Parser
+usr/bin/pcre2test
+usr/bin/bashbug
+
+# Python scripts; neither tree has Python.
+usr/bin/psl-make-dafsa
+usr/bin/xfs_protofile
+
+# Completions for shells neither tree ships (bash completions stay).
+usr/share/zsh
+usr/share/fish

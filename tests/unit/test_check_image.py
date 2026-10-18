@@ -178,18 +178,25 @@ def test_prune_lists_never_touch_load_bearing_paths(name):
         for line in (PRUNE.parent / name).read_text().splitlines()
     ]
     patterns = [p for p in patterns if p]
+    protected = [
+        "usr/bin/gpg",
+        "usr/bin/gpgv",
+        "usr/bin/gpg-agent",
+        "usr/libexec/keyboxd",
+        "usr/lib/locale",
+        "usr/lib/systemd",
+    ]
+    if name != "initrd.list":
+        # /usr: libarchive links libxml2, which links these. The initrd has neither.
+        protected += [
+            "usr/lib/x86_64-linux-gnu/libicuuc.so.78",
+            "usr/lib/x86_64-linux-gnu/libicudata.so.78",
+        ]
     for pattern in patterns:
         assert pattern.startswith("usr/"), pattern
         assert ".." not in pattern, pattern
-        for protected in (
-            "usr/bin/gpg",
-            "usr/bin/gpgv",
-            "usr/bin/gpg-agent",
-            "usr/libexec/keyboxd",
-            "usr/lib/locale",
-            "usr/lib/systemd",
-        ):
-            assert not Path(protected).match(pattern), (pattern, protected)
+        for path in protected:
+            assert not Path(path).match(pattern), (pattern, path)
 
 
 def test_installer_image_rejects_oversized_sparse_file_before_extraction(tmp_path):
