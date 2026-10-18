@@ -172,6 +172,12 @@ config:
     # server, or its group stops rebooting. Inert without a server.
     ln -sf ../bluefin-reboot-lock-release.service \
       /sysroot/usr/lib/systemd/system/multi-user.target.wants/bluefin-reboot-lock-release.service
+    # The fleet reboot lock's extra nightly runs, for the same reason. Wanted
+    # by the reboot timer rather than timers.target, so disabling that timer
+    # still stops every automatic reboot. Inert without a configured server.
+    mkdir -p /sysroot/usr/lib/systemd/system/systemd-sysupdate-reboot.timer.wants
+    ln -sf ../bluefin-fleet-reboot.timer \
+      /sysroot/usr/lib/systemd/system/systemd-sysupdate-reboot.timer.wants/bluefin-fleet-reboot.timer
 
     find /sysroot \( -type d ! -perm -1000 -o -type f \) -perm /022 -exec chmod go-w {} +
     echo "Cleared group/other write; /etc paths to repair in place: $(wc -l < "${list}")"

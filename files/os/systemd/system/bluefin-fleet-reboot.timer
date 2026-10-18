@@ -1,0 +1,31 @@
+[Unit]
+Description=Extra Nightly Reboot Attempts for the Fleet Reboot Lock
+Documentation=file:/usr/libexec/bluefin-reboot-lock man:systemd-sysupdate-reboot.service(8)
+# FSDK's (upstream systemd's) systemd-sysupdate-reboot.timer runs the reboot
+# once a night, at 04:10 plus a random delay of up to 30 minutes. With a fleet
+# reboot lock (bluefin-reboot-lock) a node that finds every slot of its group
+# taken skips that run, so a group would reboot one slot's worth of nodes per
+# night. Two more runs let the group take turns, since each node frees its
+# slot once its new boot is good, usually within minutes.
+# Only where a FleetLock server is configured, the same two sources the
+# client reads: the "|" makes these triggering conditions, so either one
+# starts the timer. ConditionCredential= sees the system credentials PID 1
+# received (SMBIOS, .cred files on the ESP), not /etc/credstore.
+ConditionPathExists=|/etc/bluefin/reboot-lock.conf
+ConditionCredential=|bluefin.reboot-lock.url
+# Installed nodes only, like systemd-sysupdate-reboot.timer.d/10-diskless.conf.
+ConditionPathExists=!/run/machines/rootdisk.raw
+ConditionKernelCommandLine=!root=tmpfs
+# Wanted by systemd-sysupdate-reboot.timer (a link in /usr,
+# elements/oci/bluefin-server-usr.bst) and stopped with it, so disabling that
+# timer still stops every automatic reboot.
+PartOf=systemd-sysupdate-reboot.timer
+
+[Timer]
+OnCalendar=04:40
+OnCalendar=05:10
+RandomizedDelaySec=30min
+Unit=systemd-sysupdate-reboot.service
+
+[Install]
+WantedBy=systemd-sysupdate-reboot.timer

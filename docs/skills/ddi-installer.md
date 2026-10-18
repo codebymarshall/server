@@ -4,7 +4,7 @@ description: Use when building or debugging the Bluefin Server boot chain, the d
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-08"
+  last_updated: "2026-10-18"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -252,8 +252,8 @@ helper its name says (also as `bluefin-host <name>`; see
 
 `files/os/systemd/system-preset/80-bluefin-updates.preset` enables FSDK's
 `systemd-sysupdate.timer` (15 min after boot, then every 2 h, randomized) and
-`systemd-sysupdate-reboot.timer` (04:10, randomized; two more runs for the
-fleet reboot lock below), which FSDK's
+`systemd-sysupdate-reboot.timer` (04:10, randomized; two more runs where the
+fleet reboot lock below is configured), which FSDK's
 `90-sysupdate.preset` would otherwise disable. The timer runs the same
 `systemd-sysupdate update` as a manual update, so enabled features follow the
 OS in lock-step. The reboot unit runs `systemd-sysupdate reboot`, which reboots
@@ -339,11 +339,14 @@ only when a newer version than the booted one is installed.
   - *Acquire*: `bluefin-reboot-lock acquire` is the last `ExecCondition=` of
     `20-interlock.conf`, so a slot is requested only when the reboot would
     happen; anything but HTTP 200 (all slots taken, server unreachable) skips
-    that run. `systemd-sysupdate-reboot.timer.d/20-fleet-lock.conf` adds runs
-    at 04:40 and 05:10, each with up to 30 minutes of random delay, so a group
-    takes turns within one night. `bluefin-boot-deadline` takes a slot before
-    it reboots a counted boot and, when the server refuses one, runs again
-    every 5 minutes (exit 75, `RestartForceExitStatus=`). When the server
+    that run. `bluefin-fleet-reboot.timer` starts the reboot unit again at
+    04:40 and 05:10, each with up to 30 minutes of random delay, so a group
+    takes turns within one night; only nodes that have the file, or the URL
+    as a system credential PID 1 received (SMBIOS, a `.cred` on the ESP), get
+    these runs: a URL placed only in `/etc/credstore` still works for the
+    lock but gets the single upstream run. `bluefin-boot-deadline` takes a slot
+    before it reboots a counted boot and, when the server refuses one, runs
+    again every 5 minutes (exit 75, `RestartForceExitStatus=`). When the server
     cannot be reached at all (the client exits 3, not 1) it reboots without a
     slot, since the update it rolls back may be what broke the network. A node
     that rebooted for an update still holds its slot, so its tries and the

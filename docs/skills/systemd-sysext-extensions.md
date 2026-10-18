@@ -4,7 +4,7 @@ description: Extensibility via systemd-sysext and systemd-confext for Bluefin Se
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-16"
+  last_updated: "2026-10-18"
   context7-sources:
     - /systemd/systemd
 ---
@@ -248,6 +248,20 @@ that is how `zfs.target` comes up at boot when the ZFS sysext is merged.
 rm /var/lib/extensions/myext.raw
 systemd-sysext refresh
 ```
+
+What the extension's `tmpfiles.d` lines put in `/etc` stays: `/etc` persists
+on installed nodes (a diskless node's starts empty every boot), so a link from
+there into the extension's `/usr` dangles once it is gone. sudo skips
+`sudoers.d` entries it cannot stat as regular files and FSDK's `/etc/profile`
+sources only readable `profile.d` scripts, but sshd exits when a file its
+`Include` glob matches cannot be opened, so never link an sshd drop-in into an
+extension. The homebrew-integration sysext writes
+`/etc/ssh/sshd_config.d/90-bluefin-homebrew-sysext.conf` as a real file whose
+one line includes `/usr/lib/bluefin-homebrew/sshd.conf`; sshd ignores an
+`Include` of a missing path. Once that sysext is removed, this file and the
+dangling `/etc/sudoers.d/bluefin-homebrew` and
+`/etc/profile.d/90-bluefin-homebrew.sh` links remain, inert; delete them if
+you like.
 
 ## Key constraints
 

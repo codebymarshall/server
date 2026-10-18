@@ -24,8 +24,11 @@ PRESETS = ROOT / "files" / "os" / "systemd" / "system-preset"
 HOST = ROOT / "files" / "homelab" / "cluster" / "internal" / "host"
 RELEASE = UNITS / "bluefin-reboot-lock-release.service"
 REBOOT_DROPINS = UNITS / "systemd-sysupdate-reboot.service.d"
-TIMER_DROPIN = UNITS / "systemd-sysupdate-reboot.timer.d" / "20-fleet-lock.conf"
+REBOOT_TIMER_DROPINS = UNITS / "systemd-sysupdate-reboot.timer.d"
+FLEET_TIMER = UNITS / "bluefin-fleet-reboot.timer"
 CREDENTIALS = "bluefin.reboot-lock.*"
+CONF = "/etc/bluefin/reboot-lock.conf"
+URL_CREDENTIAL = "bluefin.reboot-lock.url"
 
 
 def reboot_service() -> SystemdFile:
@@ -123,9 +126,37 @@ def test_release_is_enabled_in_usr_not_by_preset() -> None:
 
 
 def test_nightly_window_retries_for_a_free_slot() -> None:
-    timer = SystemdFile(TIMER_DROPIN)
-    # FSDK's systemd-sysupdate-reboot.timer: OnCalendar=4:10; the drop-in adds
-    # two more runs, each with up to 30 min of random delay (04:10-05:40).
+    timer = SystemdFile(FLEET_TIMER)
+    # FSDK's systemd-sysupdate-reboot.timer: OnCalendar=4:10 with up to 30 min
+    # of random delay; this timer adds two more runs of the same service
+    # (04:10-05:40).
     assert timer.values("Timer", "OnCalendar") == ["04:40", "05:10"]
     assert timer.value("Timer", "RandomizedDelaySec") == "30min"
+    assert timer.value("Timer", "Unit") == "systemd-sysupdate-reboot.service"
     assert not timer.values("Timer", "Persistent")
+
+
+def test_only_fleet_lock_nodes_get_the_extra_runs() -> None:
+    # Every installed node runs the reboot timer; nothing adds runs to it.
+    assert not SystemdFile(*sorted(REBOOT_TIMER_DROPINS.glob("*.conf"))).sections.get("Timer")
+    timer = SystemdFile(FLEET_TIMER)
+    # "|": either source of the server URL the client reads starts the timer.
+    assert timer.values("Unit", "ConditionPathExists") == [f"|{CONF}", "!/run/machines/rootdisk.raw"]
+    assert timer.values("Unit", "ConditionCredential") == [f"|{URL_CREDENTIAL}"]
+    assert timer.values("Unit", "ConditionKernelCommandLine") == ["!root=tmpfs"]
+    source = (HOST / "fleetlock" / "fleetlock.go").read_text(encoding="utf-8")
+    assert f'"{CONF}"' in source and f"credential {URL_CREDENTIAL})" in source
+
+
+def test_disabling_the_reboot_timer_stops_the_extra_runs_too() -> None:
+    # Enabled in /usr like the release service, so nodes that updated into it
+    # run it too, but wanted by the reboot timer instead of timers.target: the
+    # documented opt-out, systemctl disable --now systemd-sysupdate-reboot.timer,
+    # must keep stopping every automatic reboot.
+    timer = SystemdFile(FLEET_TIMER)
+    assert timer.words("Install", "WantedBy") == ["systemd-sysupdate-reboot.timer"]
+    assert timer.words("Unit", "PartOf") == ["systemd-sysupdate-reboot.timer"]
+    usr = (ROOT / "elements" / "oci" / "bluefin-server-usr.bst").read_text(encoding="utf-8")
+    assert "systemd-sysupdate-reboot.timer.wants/bluefin-fleet-reboot.timer" in usr
+    assert "timers.target.wants/bluefin-fleet-reboot.timer" not in usr
+    assert preset("bluefin-fleet-reboot.timer", PRESETS.glob("*.preset")) is None
