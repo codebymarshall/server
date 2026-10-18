@@ -9,7 +9,7 @@ Bluefin Server is an image-based Linux server OS composed from freedesktop-sdk (
 - the homelab Ignition templates `homelab-{,k0s-}{control-plane,node}.{bu,ign}` (`homelab/homelab-templates.bst`)
 - optional opt-in `systemd-sysext` images: `oci/k0s-sysext.bst` (controller, or worker when `/etc/k0s/token` exists), `oci/kubeadm-sysext.bst` (kubeadm worker: kubelet, containerd), `oci/homelab-sysext.bst` and its add-ons `oci/argo-workflows-sysext.bst`, `oci/mcp-sysext.bst`, `oci/kubestellar-sysext.bst` (KubeStellar Console), `oci/zfs-sysext.bst`, `oci/nvidia-open-595-sysext.bst` (NVIDIA open kernel modules) and `oci/nvidia-container-toolkit-sysext.bst` (CDI; own version axis like k0s)
 - an SPDX 2.3 SBOM `bluefin-server_<ver>.spdx.json` (`oci/bluefin-server-sbom.bst`)
-- a `SHA256SUMS` over the whole set, signed in-element (`SHA256SUMS.gpg`); nodes verify it against the image keyring (see the sysupdate verification skill)
+- a `SHA256SUMS` over the whole set, signed in-element (`SHA256SUMS.gpg`); nodes verify it against the image keyring (see the sysupdate verification skill). CI adds one unlisted, informational file to the release: `bluefin-server_<ver>.size.json`
 
 A release publishes `dist/diskless/` as-is: a GitHub Release `v<ver>` and an ORAS OCI artifact `ghcr.io/<owner>/bluefin-server:<ver>,latest`, both with provenance and SBOM attestations; pull requests that build rehearse it in `release-dry-run`. Most pull requests run only `validate`; the full build runs on `main`, nightly, and on pull requests labeled `full-build` or changing the FSDK junction or its patches.
 

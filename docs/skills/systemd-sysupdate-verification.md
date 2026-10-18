@@ -4,7 +4,7 @@ description: Configure and operate GPG signature verification for Bluefin Server
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-03"
+  last_updated: "2026-10-17"
   context7-sources:
     - /systemd/systemd
 ---
@@ -212,7 +212,11 @@ tell a human or a policy engine which commit and workflow run produced it.
   `verify` checks what nodes will check (`gpgv` against the keyring, every
   `SHA256SUMS` entry present and matching), plus: every published file is
   listed, every file name carries the release version, and the SBOM is valid
-  SPDX 2.3. `release` creates the GitHub Release at the built commit. `oci`
+  SPDX 2.3. Only the size report `bluefin-server_<ver>.size.json`, which
+  `image-check` writes after the build (see `ci-tooling.md`), is published
+  unlisted: information for humans that no signature covers and no transfer
+  matches, so `verify` only checks that it reports this version.
+  `release` creates the GitHub Release at the built commit. `oci`
   pushes the ORAS artifact, then checks the registry manifest layer by layer
   against the local files. Neither moves `latest` backwards: `release`
   passes `--latest` only when no published release sorts above the version
@@ -322,9 +326,11 @@ own; see [secure-boot-keys.md](secure-boot-keys.md).
   discovery for every transfer.
 - **One combined manifest per release set.** All transfers share the same
   `Path=` and therefore the same `SHA256SUMS` file. The manifest is written
-  and signed inside `oci/bluefin-server-image.bst`, covers every file in
-  `dist/diskless/` (OS images, UKIs, and the sysext `.raw.zst` assets), and
-  the release publishes that directory as-is. There is no second manifest.
+  and signed inside `oci/bluefin-server-image.bst`, covers every file the
+  image build produces (OS images, UKIs, and the sysext `.raw.zst` assets),
+  and the release publishes `dist/diskless/` as-is. The one file it does not
+  list is the informational `bluefin-server_<ver>.size.json`, which CI adds
+  after the build. There is no second manifest.
 - **`Verify=` belongs to `[Transfer]`, not `[Source]`.** It defaults to `yes`;
   no transfer in the tree overrides it.
 - **Testing the trust chain locally.** `scripts/dogfood-diskless.sh` already
@@ -352,6 +358,8 @@ own; see [secure-boot-keys.md](secure-boot-keys.md).
       `scripts/publish-release.sh`, and `release-dry-run` runs the same
       `verify`, `release --dry-run` and `oci` commands on pull requests.
 - [ ] `bluefin-server_<ver>.spdx.json` is listed in `SHA256SUMS`.
+- [ ] `bluefin-server_<ver>.size.json` is the only published file not listed
+      in `SHA256SUMS`, and `publish-release.sh verify` says so.
 - [ ] Every transfer in `files/os/sysupdate.d/*.transfer` and the k0s
       component directory uses a static `Path=` with no `@v` placeholder.
 - [ ] Every transfer uses `@v` only inside `MatchPattern=`.

@@ -509,7 +509,9 @@ jobs:
 
   # Pruning guard: every library, dlopen dependency and unit/udev program the
   # /usr image, initrd and sysexts reference must still ship. The step summary
-  # lists /usr paths added and removed since the latest release.
+  # lists /usr paths added and removed since the latest release, and the size
+  # of every file against it (scripts/ci/image-sizes.py); release and
+  # release-dry-run publish that size report with the set.
   image-check:
     needs: [changes, build]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
@@ -535,7 +537,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends erofs-utils binutils cpio zstd
 
-      - name: Download the latest release's /usr image
+      - name: Download the latest release's /usr image and size report
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -544,6 +546,8 @@ jobs:
           mkdir -p baseline
           gh release download --pattern '*.usr.raw' --dir baseline \
             || echo "No previous release; skipping the /usr diff."
+          gh release download --pattern '*.size.json' --dir baseline \
+            || echo "The latest release has no size report; comparing usr_raw only."
 
       - name: Check image references
         run: |
@@ -552,6 +556,29 @@ jobs:
           base="$(find baseline -name '*.usr.raw' | head -n1)"
           [ -n "${base}" ] && args+=(--baseline-usr "${base}")
           python3 .github/scripts/check-image.py "${args[@]}"
+
+      # Informational: growth over 5 % or 5 MiB is a warning, never a failure,
+      # and the report stays outside the signed SHA256SUMS.
+      - name: Measure image sizes
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          args=(dist/diskless)
+          usr="$(find baseline -name '*.usr.raw' | head -n1)"
+          if [ -n "${usr}" ]; then args+=(--baseline-usr "${usr}"); fi
+          report="$(find baseline -name '*.size.json' | head -n1)"
+          if [ -n "${report}" ]; then args+=(--baseline-json "${report}"); fi
+          mkdir -p size-report
+          python3 scripts/ci/image-sizes.py "${args[@]}" > "size-report/bluefin-server_${VERSION}.size.json"
+
+      - name: Upload the size report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-size
+          path: size-report/
+          if-no-files-found: error
+          retention-days: 1
 
   # Publishes the signed image set as a new, immutable GitHub Release and as
   # an ORAS OCI artifact (one layer per file, tags <version> and, unless a
@@ -587,6 +614,12 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: image
+          path: dist/diskless
+
+      - name: Download the size report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: image-size
           path: dist/diskless
 
       # Against the committed release keyring, not the build's own copy.
@@ -668,7 +701,7 @@ jobs:
   # local registry and pulls it back. No secrets, read-only token.
   release-dry-run:
     if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.build.result == 'success' }}
-    needs: build
+    needs: [build, image-check]
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
@@ -693,6 +726,14 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: image
+          path: dist/diskless
+
+      # Only image-check's success uploads it; the rehearsal runs either way.
+      - name: Download the size report
+        if: needs.image-check.result == 'success'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: image-size
           path: dist/diskless
 
       - name: Verify the release set

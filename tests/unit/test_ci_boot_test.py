@@ -7,6 +7,8 @@
   whose job downloads that artifact.
 - A bucket stops at its first failing scenario, so the uploaded logs are
   that scenario's, and names it in an error annotation.
+- A bucket run reports its wall time, passed or failed, as a notice and a
+  row in the job's step summary.
 """
 
 from __future__ import annotations
@@ -31,10 +33,12 @@ UPDATE_PATHS = re.compile(r"\bdist/(diskless-next|diskless-broken|ignition-sigs)
 
 
 def script(*args: str, release: bool = False, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    # Not the step summary of the job running these tests.
+    inherited = {k: v for k, v in os.environ.items() if k != "GITHUB_STEP_SUMMARY"}
     return subprocess.run(
         [BASH, str(SCRIPT), *args],
         cwd=ROOT,
-        env={**os.environ, **(env or {}), "RELEASE": "true" if release else "false"},
+        env={**inherited, **(env or {}), "RELEASE": "true" if release else "false"},
         capture_output=True,
         text=True,
         check=False,
@@ -120,6 +124,25 @@ def test_a_bucket_stops_at_the_first_failure(tmp_path: Path) -> None:
     assert out.returncode == 1
     assert len((tmp_path / "calls").read_text().splitlines()) == 1
     assert "::error title=boot-test (installer-disks)::Install from the offline USB installer, boot it, reinstall over it failed" in out.stdout
+
+
+@pytest.mark.parametrize(("fail_on", "result", "rc"), [("none", "passed", 0), ("foreign-gpt", "failed", 1)])
+def test_a_bucket_reports_its_wall_time(tmp_path: Path, fail_on: str, result: str, rc: int) -> None:
+    summary = tmp_path / "summary.md"
+    out = script("installer-disks", env={**fake_bash(tmp_path, fail_on=fail_on), "GITHUB_STEP_SUMMARY": str(summary)})
+    assert out.returncode == rc
+    notice = rf"::notice title=boot-test \(installer-disks\)::bucket installer-disks took \d+s \({result}\)"
+    assert re.fullmatch(notice, out.stdout.splitlines()[-1])
+    rows = summary.read_text().splitlines()
+    assert rows[:2] == ["| Bucket | Result | Wall time |", "| --- | --- | ---: |"]
+    assert len(rows) == 3 and re.fullmatch(rf"\| installer-disks \| {result} \| \d+m \d\ds \|", rows[2])
+
+
+def test_listing_reports_no_wall_time(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.md"
+    out = script("--list", env={"GITHUB_STEP_SUMMARY": str(summary)})
+    assert out.returncode == 0 and "::notice" not in out.stdout
+    assert not summary.exists()
 
 
 @pytest.mark.parametrize("args", [[], ["nope"], ["diskless", "install"], ["--list", "nope"]])

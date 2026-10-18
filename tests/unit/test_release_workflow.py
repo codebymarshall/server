@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -19,6 +20,14 @@ DRY_RUN = JOBS["release-dry-run"]
 
 def steps(job: dict, uses_prefix: str) -> list[dict]:
     return [s for s in job.get("steps", []) if s.get("uses", "").startswith(uses_prefix)]
+
+
+def named_step(job: dict, name: str) -> dict:
+    return next(s for s in job["steps"] if s.get("name") == name)
+
+
+def step_names(job: dict) -> list[str]:
+    return [s.get("name", "") for s in job["steps"]]
 
 
 def publish_commands(job: dict) -> list[str]:
@@ -202,3 +211,46 @@ def test_release_publishes_nothing_once_the_commit_cannot_be_tagged() -> None:
     for later in RELEASE["steps"][check + 1 :]:
         assert later.get("if") == "steps.taggable.outputs.publish == 'true'", later.get("name")
     assert "taggable" not in json.dumps(DRY_RUN)
+
+
+def test_image_check_measures_the_set_against_the_latest_release(tmp_path: Path) -> None:
+    job = JOBS["image-check"]
+    download = named_step(job, "Download the latest release's /usr image and size report")
+    assert "gh release download --pattern '*.size.json' --dir baseline" in download["run"]
+    order = step_names(job)
+    assert order.index("Check image references") < order.index("Measure image sizes") < order.index("Upload the size report")
+    measure = named_step(job, "Measure image sizes")
+    assert measure["env"] == {"VERSION": "${{ needs.build.outputs.version }}"}
+    upload = named_step(job, "Upload the size report")
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["with"]["name"] == "image-size" and upload["with"]["path"] == "size-report/"
+
+    # The step itself, on a one-file set and the latest release's files.
+    (tmp_path / "scripts" / "ci").mkdir(parents=True)
+    shutil.copy(ROOT / "scripts" / "ci" / "image-sizes.py", tmp_path / "scripts" / "ci")
+    uuid = "d3107d37-a9da-32cf-3c19-49fa3b0cb1df"
+    (tmp_path / "dist" / "diskless").mkdir(parents=True)
+    (tmp_path / "dist" / "diskless" / f"bluefin-server_0.42_{uuid}.usr.raw").write_bytes(b"u" * 300)
+    (tmp_path / "baseline").mkdir()
+    (tmp_path / "baseline" / f"bluefin-server_26.10.1_{uuid}.usr.raw").write_bytes(b"u" * 200)
+    (tmp_path / "baseline" / "bluefin-server_26.10.1.size.json").write_text(
+        json.dumps({"image_version": "26.10.1", "metrics": {"usr_raw": 100}})
+    )
+    env = {k: v for k, v in os.environ.items() if k != "GITHUB_STEP_SUMMARY"} | {"VERSION": "0.42"}
+    subprocess.run(["bash", "-c", measure["run"]], cwd=tmp_path, env=env, check=True, capture_output=True)
+    report = json.loads((tmp_path / "size-report" / "bluefin-server_0.42.size.json").read_text())
+    assert (report["image_version"], report["baseline"], report["delta"]) == ("0.42", "26.10.1", {"usr_raw": 200})
+
+
+def test_release_and_dry_run_publish_the_size_report() -> None:
+    # Next to the set before `verify`, which allows it outside SHA256SUMS.
+    # The rehearsal runs without it when image-check failed.
+    for job in (RELEASE, DRY_RUN):
+        download = named_step(job, "Download the size report")
+        assert download["uses"].startswith("actions/download-artifact@")
+        assert download["with"] == {"name": "image-size", "path": "dist/diskless"}
+        order = step_names(job)
+        assert order.index("Download image artifacts") < order.index("Download the size report") < order.index("Verify the release set")
+    assert "if" not in named_step(RELEASE, "Download the size report")
+    assert named_step(DRY_RUN, "Download the size report")["if"] == "needs.image-check.result == 'success'"
+    assert DRY_RUN["needs"] == ["build", "image-check"]

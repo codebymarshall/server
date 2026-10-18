@@ -16,7 +16,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "publish-release.sh"
+IMAGE_SIZES = ROOT / "scripts" / "ci" / "image-sizes.py"
 VERSION = "26.09.7"
+SIZE_REPORT = f"bluefin-server_{VERSION}.size.json"
 UUID_A = "d3107d37-a9da-32cf-3c19-49fa3b0cb1df"
 UUID_B = "7c6a26c3-2990-8ab6-966f-1e38b85bcd4e"
 SPDX = {
@@ -218,6 +220,45 @@ def test_unsigned_top_level_file_is_refused(release: Path, signers) -> None:
     assert "not covered by SHA256SUMS: dogfood-serial.log" in result.stderr
 
 
+def add_size_report(release: Path, version: str = VERSION) -> Path:
+    """image-check's report, which release and release-dry-run download into the set."""
+    report = release / SIZE_REPORT
+    report.write_text(json.dumps({
+        "baseline": "26.09.6",
+        "commit": "0" * 40,
+        "delta": {"usr_raw": 7 * 2**20},
+        "image_version": version,
+        "metrics": {"usr_raw": 107 * 2**20, "zfs_sysext_raw_zst": 3 * 2**20},
+    }))
+    return report
+
+
+def test_size_report_is_published_unsigned(release: Path, signers) -> None:
+    report = add_size_report(release)
+    result = verify(release, signers[0].keyring)
+    assert result.returncode == 0, result.stderr
+    assert SIZE_REPORT not in (release / "SHA256SUMS").read_text()
+    subjects = (release.parent / f"release-subjects-{VERSION}.sha256").read_text().splitlines()
+    assert sorted(line.split("  ", 1)[1] for line in subjects) == sorted(
+        [*release_files(VERSION), "SHA256SUMS", "SHA256SUMS.gpg", SIZE_REPORT]
+    )
+    assert f"{hashlib.sha256(report.read_bytes()).hexdigest()}  {SIZE_REPORT}" in subjects
+
+
+def test_size_report_of_another_version_is_refused(release: Path, signers) -> None:
+    add_size_report(release, version="26.09.6")
+    result = verify(release, signers[0].keyring)
+    assert result.returncode != 0
+    assert f"{SIZE_REPORT} is not a size report of {VERSION}" in result.stderr
+
+
+def test_size_report_named_for_another_version_is_refused(release: Path, signers) -> None:
+    (release / "bluefin-server_26.09.6.size.json").write_text("{}")
+    result = verify(release, signers[0].keyring)
+    assert result.returncode != 0
+    assert "not covered by SHA256SUMS: bluefin-server_26.09.6.size.json" in result.stderr
+
+
 FAKE_GH_RELEASES = """#!/usr/bin/env python3
 import json, os, sys
 with open(os.environ["GH_CALLS"], "a") as calls:
@@ -254,9 +295,9 @@ def test_dry_run_renders_gh_release_for_top_level_files_only(release: Path, fake
     assert "efi-keys" not in command
 
 
-def test_release_notes_use_the_release_version_and_source(release: Path, tmp_path: Path, monkeypatch) -> None:
-    # Capture the actual gh arguments without publishing anything. Run outside
-    # the checkout to ensure the release text has no working-directory dependency.
+@pytest.fixture
+def gh_args(tmp_path: Path, monkeypatch):
+    """A gh that records its arguments without publishing; returns a reader."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     capture = tmp_path / "gh-args.json"
@@ -271,9 +312,15 @@ def test_release_notes_use_the_release_version_and_source(release: Path, tmp_pat
     monkeypatch.setenv("GH_CAPTURE", str(capture))
     monkeypatch.setenv("GITHUB_REPOSITORY", "example/server")
     monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    return lambda: json.loads(capture.read_text())
+
+
+def test_release_notes_use_the_release_version_and_source(release: Path, tmp_path: Path, gh_args) -> None:
+    # Run outside the checkout to ensure the release text has no
+    # working-directory dependency.
     result = run("release", str(release), VERSION, cwd=tmp_path)
     assert result.returncode == 0, result.stderr
-    args = json.loads(capture.read_text())
+    args = gh_args()
     notes = args[args.index("--notes") + 1]
     assert f"https://github.com/example/server/releases/download/v{VERSION}/bluefin-server-installer_{VERSION}.raw" in notes
     assert f"sudo dd if=bluefin-server-installer_{VERSION}.raw of=/dev/<usb>" in notes
@@ -283,10 +330,27 @@ def test_release_notes_use_the_release_version_and_source(release: Path, tmp_pat
     assert f"https://github.com/example/server/blob/{'0' * 40}/docs/skills/usb-installer.md" in notes
     assert "```bash\n" in notes
     assert "${" not in notes
+    assert "## Image sizes" not in notes
     assert args[args.index("--notes") + 2:] == [
         str(release / name)
         for name in sorted([*release_files(VERSION), "SHA256SUMS", "SHA256SUMS.gpg"])
     ]
+
+
+def test_release_notes_end_with_the_size_table(release: Path, tmp_path: Path, gh_args) -> None:
+    report = add_size_report(release)
+    result = run("release", str(release), VERSION, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    args = gh_args()
+    notes = args[args.index("--notes") + 1]
+    table = subprocess.run(
+        ["python3", str(IMAGE_SIZES), "--render", str(report)], capture_output=True, text=True, check=True
+    ).stdout
+    assert "| `usr_raw` | 107.0 MiB | **+7.0 MiB (+7.0%)** |" in table
+    head, sizes = notes.split("\n\n## Image sizes\n\n")
+    assert head.endswith("for other deployment options.")
+    assert sizes == f"Measured by CI; `{SIZE_REPORT}` has the exact bytes. It is information only: `SHA256SUMS` does not cover it.\n\n{table.rstrip()}"
+    assert str(report) in args[args.index("--notes") + 2:]
 
 
 @pytest.mark.parametrize(
@@ -422,6 +486,14 @@ def test_oci_pushes_nothing_when_latest_cannot_be_read(release: Path, tmp_path: 
     assert f"cannot read {OCI_REF}:latest" in result.stderr
     assert "push" not in calls
     assert state["tags"]["latest"] == "sha256:old"
+
+
+def test_oci_carries_the_size_report(release: Path, tmp_path: Path) -> None:
+    add_size_report(release)
+    result, state, _ = oci(release, tmp_path, None)
+    assert result.returncode == 0, result.stderr
+    layers = state["manifests"][state["tags"][VERSION]]["layers"]
+    assert SIZE_REPORT in {layer["annotations"]["org.opencontainers.image.title"] for layer in layers}
 
 
 WORKFLOW_REF = "projectbluefin/server/.github/workflows/build.yml@refs/heads/main"

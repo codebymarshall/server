@@ -12,26 +12,35 @@
 # artifact to a throwaway local registry and pulls it back.
 #
 # A release publishes the top-level files of DIR: the ones SHA256SUMS lists,
-# plus SHA256SUMS and SHA256SUMS.gpg. Subdirectories (efi-keys/,
-# sysupdate-keys/) stay local.
+# plus SHA256SUMS and SHA256SUMS.gpg, and the size report image-check
+# measures (bluefin-server_<ver>.size.json, scripts/ci/image-sizes.py). That
+# report is information for humans: no signature covers it and nothing on a
+# node reads it. Subdirectories (efi-keys/, sysupdate-keys/) stay local.
 set -euo pipefail
 
 ARTIFACT_TYPE=application/vnd.projectbluefin.server.release.v1
 TITLE_KEY=org.opencontainers.image.title
+IMAGE_SIZES="$(dirname "${BASH_SOURCE[0]}")/ci/image-sizes.py"
 
 die() { echo "publish-release: $*" >&2; exit 1; }
+
+size_report() { echo "bluefin-server_$1.size.json"; }
 
 # Top-level regular files of DIR, sorted: exactly what a release publishes.
 published_files() {
     find "$1" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort
 }
 
-# "<sha256> <name>" for every published file, from the verified SHA256SUMS
-# plus the two files it cannot list itself.
+# "<sha256> <name>" for every published file of DIR (release VERSION), from
+# the verified SHA256SUMS plus the files it cannot list.
 published_digests() {
+    local unlisted=(SHA256SUMS SHA256SUMS.gpg)
+    if [ -f "$1/$(size_report "$2")" ]; then
+        unlisted+=("$(size_report "$2")")
+    fi
     {
         sed -E 's/^([0-9a-f]{64}) [ *]/\1 /' "$1/SHA256SUMS"
-        (cd "$1" && sha256sum SHA256SUMS SHA256SUMS.gpg) | sed -E 's/  / /'
+        (cd "$1" && sha256sum "${unlisted[@]}") | sed -E 's/  / /'
     } | LC_ALL=C sort -k2
 }
 
@@ -151,12 +160,18 @@ cmd_verify() {
     (cd "${dir}" && sha256sum --check --strict --quiet SHA256SUMS) \
         || die "checksum mismatch"
 
-    # Everything a release would publish is covered by the signature.
-    local unsigned
+    # Everything a release would publish is covered by the signature, but
+    # the size report, which nothing trusts.
+    local report unsigned
+    report="$(size_report "${ver}")"
     unsigned="$(LC_ALL=C comm -23 \
-        <(published_files "${dir}" | grep -vxE 'SHA256SUMS(\.gpg)?') \
+        <(published_files "${dir}" | grep -vxF -e SHA256SUMS -e SHA256SUMS.gpg -e "${report}") \
         <(printf '%s\n' "${listed[@]}" | LC_ALL=C sort))"
     [ -z "${unsigned}" ] || die "not covered by SHA256SUMS: ${unsigned//$'\n'/ }"
+    if [ -f "${dir}/${report}" ]; then
+        jq -e --arg v "${ver}" '.image_version == $v and (.metrics | type == "object")' \
+            "${dir}/${report}" >/dev/null || die "${report} is not a size report of ${ver}"
+    fi
 
     local pattern count
     for name in "${listed[@]}"; do
@@ -178,7 +193,7 @@ cmd_verify() {
 
     # Attestation subjects: every published file (sha256sum format).
     local subjects="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/release-subjects-${ver}.sha256"
-    published_digests "${dir}" | sed 's/ /  /' > "${subjects}"
+    published_digests "${dir}" "${ver}" | sed 's/ /  /' > "${subjects}"
     echo "release set ${ver}: ${#listed[@]} files match SHA256SUMS, signature verified"
     output subjects "${subjects}"
 }
@@ -304,6 +319,13 @@ See the [boot and install guide](${docs}/ddi-installer.md),
 [homelab guide](${docs}/homelab-profile.md) for other deployment options.
 EOF
 )"
+    local report
+    report="$(size_report "${ver}")"
+    if [ -f "${dir}/${report}" ]; then
+        notes+=$'\n\n## Image sizes\n\n'
+        notes+="Measured by CI; \`${report}\` has the exact bytes. It is information only: \`SHA256SUMS\` does not cover it."$'\n\n'
+        notes+="$(python3 "${IMAGE_SIZES}" --render "${dir}/${report}")"
+    fi
 
     # GitHub's own choice of "Latest" goes by creation date, and
     # releases/latest/download/ must never step back to an older version.
@@ -372,7 +394,7 @@ cmd_oci() {
     fi
 
     # The registry holds exactly the published files, byte for byte.
-    diff -u <(published_digests "${dir}") \
+    diff -u <(published_digests "${dir}" "${ver}") \
         <(oras manifest fetch "${flags[@]}" "${ref}@${digest}" \
             | jq -r --arg k "${TITLE_KEY}" '.layers[] | "\(.digest | ltrimstr("sha256:")) \(.annotations[$k])"' \
             | LC_ALL=C sort -k2) \

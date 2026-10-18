@@ -128,6 +128,18 @@ bucket_installer-disks() {
 
 usage() { echo "usage: $0 <bucket> | --list [<bucket>] | --buckets (buckets: ${buckets[*]})" >&2; exit 2; }
 
+# A bucket's wall time, passed or failed: a notice, and a row in the job's
+# step summary, so rebalancing the buckets starts from real figures.
+report_time() {
+    local status=$? took=$((SECONDS - started)) result=passed
+    [ "${status}" = 0 ] || result=failed
+    echo "::notice title=boot-test (${bucket})::bucket ${bucket} took ${took}s (${result})"
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+        printf '| Bucket | Result | Wall time |\n| --- | --- | ---: |\n| %s | %s | %dm %02ds |\n' \
+            "${bucket}" "${result}" $((took / 60)) $((took % 60)) >> "${GITHUB_STEP_SUMMARY}"
+    fi
+}
+
 case "${1:-}" in
     --buckets) printf '%s\n' "${buckets[@]}"; exit 0 ;;
     --list) list=true; shift ;;
@@ -137,5 +149,9 @@ selected=("${@:-${buckets[@]}}")
 [ "${list}" = true ] || [ "$#" = 1 ] || usage
 for bucket in "${selected[@]}"; do
     [[ " ${buckets[*]} " == *" ${bucket} "* ]] || usage
+    if [ "${list}" != true ]; then
+        started=${SECONDS}
+        trap report_time EXIT
+    fi
     "bucket_${bucket}"
 done
