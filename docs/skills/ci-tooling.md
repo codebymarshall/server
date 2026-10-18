@@ -1,6 +1,6 @@
 ---
 name: ci-tooling
-description: CI workflow conventions for Bluefin Server. Use when writing or editing .github/workflows/*.yml, debugging a failing build job, or adding a new CI step.
+description: CI workflow conventions for Bluefin Server. Use when writing or editing .github/workflows/*.yml, debugging a failing build job, adding a new CI step, or finding out which automation set a label and what reads it.
 metadata:
   type: reference
   status: stable
@@ -53,13 +53,12 @@ a binary chosen by an upstream release rather than by a commit in this repo.
     tool: just@<version> # the version every other call site uses
 ```
 
-The version is repeated at each call site — currently six steps in four
-workflows: `build.yml` (three jobs), `reproducibility.yml`, `unit-tests.yml`
-and `track-junctions.yml`. A Renovate regex manager (`renovate.json`) matches
-every `tool: just@` in the workflows and bumps them in one PR, so CI never
-runs two versions at once; `tests/unit/test_ci_tool_pins.py` fails if they
-drift and `tests/unit/test_ci_workflows.py` if a call site falls outside the
-Renovate manager.
+The version is repeated at each call site. A Renovate regex manager
+(`renovate.json`) matches every `tool: just@` in the workflows and bumps them
+in one PR, so CI never runs two versions at once;
+`tests/unit/test_ci_tool_pins.py` fails if they drift and
+`tests/unit/test_ci_workflows.py` if a call site falls outside the Renovate
+manager.
 
 ### Python packages and other pins
 
@@ -126,12 +125,10 @@ it runs only for the `schedule` event and executes only
 `.github/scripts/tracking-issue.sh` (sparse checkout). The trackers' `status`
 jobs are the same.
 
-Junction ref tracking must never run on `pull_request`. It used to, as a
-`track-refs` job gated on `startsWith(github.head_ref, 'renovate/')`, and a
-branch name is not an identity. It also pushed its result onto whatever PR
-branch happened to be open, so unrelated dependency PRs silently carried
-freedesktop-sdk junction bumps. It now lives in
-`track-junctions.yml` on a schedule, opening its own PR on its own branch.
+Junction ref tracking never runs on `pull_request`: the old `track-refs` job,
+gated on `startsWith(github.head_ref, 'renovate/')` (a branch name is not an
+identity), pushed junction bumps onto whatever PR branch was open.
+`track-junctions.yml` runs on a schedule and opens its own PR.
 
 The `build` job (validation, compile, signing) runs with the read-only default
 on every event. `changes` adds only `pull-requests: read`, to list a pull
@@ -143,13 +140,8 @@ narrow as possible and document why.
 Use rootless podman in build jobs wherever possible. Only use `sudo podman` when
 the step genuinely requires root (e.g. BST artifact cache access). Do not mix
 `sudo podman` and plain `podman` within the same job — pick one based on what the
-runner supports and stay consistent.
-
-The `sudo_cmd` Just variable auto-detects at recipe startup:
-
-```just
-sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } else { "sudo" }
-```
+runner supports and stay consistent. The Justfile's `sudo_cmd` is empty when
+rootless `podman info` works and `sudo` otherwise.
 
 ### No PATs; GitHub App tokens for automation that must trigger CI
 
@@ -232,7 +224,7 @@ use: remove only this repository from their repository access.
 | `actionlint`, `zizmor` | `lint-actions.yml` | every `pull_request`, `push/main` | Lint the workflows (see [Workflow linting](#workflow-linting)). Read-only token; zizmor uses it for its online audits. |
 | `authorize` | `prow.yml` | `issue_comment` | Calls `projectbluefin/.project`'s reusable `prow-authorize.yml` (pinned by SHA) to look the commenter up in the org's `maintainers.yaml` roster; its `triage` output unlocks `/triage`, `/priority` and `/label` for the `prow` job. A failed lookup blocks the comment's commands. `contents: read`. |
 | `prow` | `prow.yml` | `issues`, `issue_comment`, `pull_request_target`, `pull_request_review`, `check_suite`, `schedule` (hourly) | Runs `cncf/prow-github-actions` v3.0.1 (pinned by SHA): `/` commands from the `prow-commands` allowlist, `needs-kind` on issues, reviewers and approvers from `OWNERS`, and merging through the merge queue once a PR has `lgtm` + `approved` (the hourly schedule is a backstop). `pull_request_target` is safe because nothing checks out or runs PR code. Write scopes granted per job. |
-| `label-sync` | `prow.yml` | `workflow_dispatch` | Same reusable workflow with `jobs: label-sync`: syncs repository labels from the org config at `projectbluefin/.project/prow.yaml`. Run by hand after every change to that config. |
+| `label-sync` | `prow.yml` | `workflow_dispatch`, `push` of a repository `.github/prow.yaml` (none exists) | Same reusable workflow with `jobs: label-sync`: syncs repository labels from the org config at `projectbluefin/.project/prow.yaml`. Run by hand after every change to that config. |
 | `check`, `propose` | `track-binaries.yml` | `schedule` (08:30 UTC), `workflow_dispatch` | `check` finds the newest patch release in each pinned series of the upstream components pinned by version + sha256 (Kubernetes, cri-tools, containerd, runc, CNI plugins, k0s, each NVIDIA driver flavour inside its branch, ORAS) or by version + git commit (NVIDIA Container Toolkit), and the newest dated snapshot of the IANA registries behind `/etc/protocols` and `/etc/services` (`iana-etc`, no series), with `.github/scripts/track-binaries.py`; `propose` moves each version together with its sha256 pins for every pinned architecture (amd64 and the `arch == "aarch64"` sources), verified against upstream's checksum files and the downloaded assets (a git commit: the GitHub API and `git ls-remote` must agree), and opens or updates one PR per component on `auto/track-binaries/<component>`. Minor bumps stay manual (`kubeadm-sysext.md`, `k0s-sysext.md`); a new NVIDIA branch is a new flavour (`nvidia-sysext.md`). Read-only `GITHUB_TOKEN`; writes use the mergeraptor app token (`trackers` environment, `propose` only), minted after the apply step and narrowed to `contents` + `pull-requests` (+ `workflows` for ORAS, pinned in `build.yml`). Never on `pull_request`. |
 
 Both trackers commit, push and open or update their pull request through
@@ -242,91 +234,102 @@ a daily run neither force-pushes an identical commit nor restarts that PR's
 build; `track-binaries` also passes `--skip-closed-title`, so a release
 whose PR was closed is not proposed again.
 
-GitHub Actions runs the **complete BuildStream compilation pipeline** using `/mnt`
-SSD storage on the runner for podman and BuildStream caches
-(`scripts/ci-runner-disk.sh`, called by every job that builds). Release assets are
-uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
+## Labels
+
+Prow (`prow.yml`, acting as `github-actions[bot]`) writes its built-in labels and
+those of the org config `projectbluefin/.project/prow.yaml`; the hive
+(`hivecommons-hive[bot]`) writes its own ([reference](https://github.com/hivecommons/hive/blob/v5/src/docs/labels-and-control-signals.md)).
+**Bold** labels gate a build or a merge.
+
+| Label (family) | Set by | Read by / effect | How a human changes it |
+|---|---|---|---|
+| **`full-build`** | people | `build.yml` `changes`: `image=true` when a changed path can reach the image, so `build`, `boot-test`, `image-check` and `release-dry-run` run on this and every later push | add it (starts the build); remove it to stop building later pushes |
+| **`lgtm`** | Prow `/lgtm` from an `OWNERS` entry other than the author, or a person adding it; bound to the head by the `prow/lgtm` status, dropped on new commits | Prow merge gate | `/lgtm`, `/lgtm cancel` |
+| **`approved`** | Prow's approve plugin: `/approve` from an `OWNERS` approver, and by itself when the author is one | Prow merge gate: with `OWNERS` files it needs `lgtm` and `approved` | `/approve`, `/approve cancel` |
+| **`hold`** | Prow `/hold`; the hive (level gate on its agent PRs, self-authorization, reporter trust, holdguard) | Prow does not merge; the hive holds any item with `hold` in a label | `/hold cancel` (any commenter) or remove it: lifts both at once; holdguard re-adds it if the head moved while held |
+| **`sentinel-alert`** | the hive's sentinel (diff heuristics, with a "Sentinel alert" comment) | the hive will not approve, lgtm or auto-merge the PR (`stage/085-needs-decision`); Prow ignores it | remove after review; the hive re-adds it only on new commits |
+| **`needs-human`** | the hive (fix budget spent, a workflow change), people | the hive stops fixing and auto-merging the PR; an issue leaves the agent queue; Prow ignores it | remove it once handled |
+| `role/*`, `author/*`, `dco`, `no-dco` | the hive | `role/trusted` may auto-merge, the other tiers need a maintainer's `/lgtm` `/approve`; `author/human`, `clanker`, `hive`: who wrote the PR; `author/trusted`, `contributor`, `newcomer`, `untrusted`: the retired spelling of `role/*`; `no-dco`: a commit lacks `Signed-off-by:` | trust: the hive's registry; DCO: `git rebase --signoff` |
+| `stage/*` | the hive, one per item, recomputed every cycle | pipeline state; `085`: a person owes a decision; `090-ready-for-human-merge`: only a maintainer's `/lgtm` `/approve` is missing | act on the cause, not the label |
+| `agent/*`, `hive/*`, `from-review`, `quality`, `security`, `testing` | the hive | provenance and hive routing | leave them |
+| `approved-direction` | the hive on `/hive approve` or `/hive decision <text>`; people | a hive-filed issue is accepted, so a PR for it is not held | `/hive approve` on the issue |
+| `kind/*`, `area/*`, `triage/accepted`, `priority/*`, `blocked`, `needs-kind`, `needs-triage`, `ok-to-test`, `help wanted`, `good first issue` | Prow commands (`/triage`, `/priority`, `/label` only for the maintainers roster); `needs-*` on issues without `kind/*` or `triage/*` | classification and hive ranking; `ok-to-test` approves a non-member PR's held Actions runs, now and on later pushes; the `area/*` values are the org's desktop areas | the command or its `/remove-` form |
+| `chore/deps`, `automerge` | Renovate, as the mergeraptor app (not from `renovate.json`) | nothing in this repository | Renovate's configuration |
+
+- `approved` from `github-actions[bot]` as a PR opens is Prow counting the
+  author's `OWNERS` entry (`require_self_approval` is off), not a second person.
+- Prow's gate reads only `lgtm`, `approved`, `hold`, `needs-rebase` and
+  `do-not-merge/*`: it merges past `sentinel-alert` and `needs-human`.
+- A PR not ready for review gets no reviewers or merge from Prow or the hive
+  (`gh pr ready N`). GitHub logs each conversion as a `convert_to_draft`
+  timeline event with its actor; with none, the PR was opened that way.
+- Verify a label you add with `gh pr view N --json labels`: one
+  `gh pr edit --add-label` left no `labeled` event (#490, #491). Add labels
+  in their own `gh pr edit` call.
 
 ## Core Process
 
-1. **Renovate tracking:** `renovate.json` is configured with a custom regex
-   manager to scan the BuildStream junction (`freedesktop-sdk.bst`) using the
-   `git-refs` datasource.
-2. **Auto-resolution:** The scheduled `track-junctions` workflow executes
-   `just bst source track` to resolve raw tags to full `git-describe` refs,
-   syncs `installer-version` to the tracked FSDK point release, and proposes the
-   result as its own pull request against `main`.
+1. **Renovate tracking:** a `renovate.json` regex manager follows the
+   `# renovate:` annotation on `elements/freedesktop-sdk.bst` (`git-refs`).
+2. **Auto-resolution:** the scheduled `track-junctions` job resolves the
+   junction ref and proposes it as its own pull request (see
+   [bump-fsdk-version.md](bump-fsdk-version.md)).
 3. **Full Compilation:** Builds the OS DDI, signed UKIs, netboot ESP, and the
    k0s, KubeStellar, kubeadm, OpenZFS and NVIDIA systemd-sysext assets for every push to
    `main`, every night, and on pull requests that carry `full-build` or change
    the FSDK junction or its patches, and signs the combined `SHA256SUMS`
    inside `oci/bluefin-server-image.bst` (gpg sign plus a `gpgv` proof
-   against the shipped keyring). Other pull requests run `validate`.
+   against the shipped keyring). Other pull requests run `validate`. Every
+   job that builds keeps the podman and BuildStream caches on the runner's
+   `/mnt` SSD (`scripts/ci-runner-disk.sh`).
 4. **Boot test:** Downloads the exported image sets and runs, in QEMU with
    Secure Boot OVMF, each as one `scripts/dogfood-diskless.sh --check` or
    `scripts/dogfood-install.sh` or `scripts/dogfood-installer.sh` call, from
    the buckets of `scripts/ci/boot-test.sh` (`--list` prints them); a bucket
    stops at its first failure. The firmware is Fedora's `edk2-ovmf` (Koji
-   URL + SHA-256 in `scripts/ci/install-qemu-ovmf.sh`), not Ubuntu's `ovmf`:
-   Ubuntu 26.04's OVMF 2025.11 rejects systemd-boot's PK enrollment
-   (`Failed to write PK secure boot variable: Security violation`), and
-   until this was caught every CI boot ran in setup mode with Secure Boot
-   off. `--check` now fails unless the probe reports
-   `secureboot=enabled` (or, for tamper runs, the kernel logs
-   `Secure boot enabled`). Bump the pin by hand; Renovate does not track it:
-   a regex manager can move the Koji URL but not its SHA-256, so every
-   Renovate PR would fail the checksum, and a new firmware build has to pass
-   the full boot test anyway.
+   URL + SHA-256 in `scripts/ci/install-qemu-ovmf.sh`): Ubuntu 26.04's OVMF
+   2025.11 rejects systemd-boot's PK enrollment (`Security violation`) and
+   boots on with Secure Boot off (see [ddi-installer-build.md](ddi-installer-build.md)).
+   Bump the pin by hand: Renovate could move the URL but not its SHA-256.
    - diskless netboot, no failed units; `tests/fixtures/nfs/netdb.probe`
-     must see `tcp` and `sunrpc` resolve, the local portmapper answer
-     `rpcinfo`, and an NFSv3 mount get past the protocol lookup
-     (`DOGFOOD_EXPECT`);
-   - `DOGFOOD_TAMPER=raw`: a corrupted DDI must be refused by the manifest
-     check (`DOWNLOAD INVALID: Checksum of ... did not check out`);
-     `DOGFOOD_TAMPER=sums`: the same DDI with `SHA256SUMS` re-hashed to match
-     it must be refused by the signature check (`DOWNLOAD INVALID: Signature
-     verification failed`). Both only after the image, `SHA256SUMS` and
-     `SHA256SUMS.gpg` were served, and nothing may boot;
-   - Ignition from the `ignition.config` credential, and UEFI HTTP boot with
-     `bluefin-node.ign` served next to the UKI, both with
-     `tests/fixtures/ignition/apply-marker.ign`: the probe must see the
-     written file and the Ignition-enabled unit active (`DOGFOOD_EXPECT`);
-     outside releases also signed with the Ignition config key (applied),
-     signed with the image signing key or over other bytes (refused), and
-     unsigned on the `1.<run>.1` set, built with `ignition_allow_unsigned`
-     off (refused; see booty-integration.md);
+     must resolve `tcp` and `sunrpc`, reach the local portmapper (`rpcinfo`)
+     and get an NFSv3 mount past the protocol lookup (`DOGFOOD_EXPECT`);
+   - `DOGFOOD_TAMPER=raw` and `=sums`: the pull must refuse a corrupted DDI
+     (checksum) and that DDI with `SHA256SUMS` re-hashed to match it
+     (signature), and nothing may boot;
+   - Ignition from the `ignition.config` credential and from
+     `bluefin-node.ign` over UEFI HTTP boot, both with
+     `tests/fixtures/ignition/apply-marker.ign` (`DOGFOOD_EXPECT`); outside
+     releases also signed with the Ignition config key (applied), with the
+     image signing key or over other bytes (refused), and unsigned on the
+     `1.<run>.1` set, built with `ignition_allow_unsigned` off (refused;
+     see booty-integration.md);
    - releases: diskless boot, `systemd-sysinstall` to disk, boot the disk;
    - every other build (the nightly build of `main`, `full-build` and FSDK
      pull requests, dispatches): the same, then `systemd-sysupdate` A->B to
      `1.<run>.1` and a boot-counted rollback from a corrupted `1.<run>.2`,
-     with the ZFS and NVIDIA sysexts merged together
-     (`DOGFOOD_SYSEXT=zfs,nvidia`; see
-     [ddi-installer-build.md](ddi-installer-build.md), also for why not
-     `0.<run>.N`). Releases skip this because their extra sets would be
-     release-signed versions nobody publishes; the nightly dev-key build of
-     `main` runs it instead.
+     with the ZFS and NVIDIA sysexts merged (`DOGFOOD_SYSEXT=zfs,nvidia`;
+     versions: [ddi-installer-build.md](ddi-installer-build.md)). Releases
+     skip it: their extra sets would be release-signed versions nobody
+     publishes.
    - `scripts/dogfood-installer.sh`: the offline USB installer installs
      unattended onto a blank disk, which then boots with and without the
-     installer attached. Outside releases it then gets `1.<run>.1`
-     (`dist/diskless-next`) the way a PC installed from the stick does:
-     an unreachable and a foreign-signed source must fail
-     `systemd-sysupdate.service` and show on the login banner, the update
-     must stage, boot and be blessed (see "Update health on the node" in
+     installer attached. Outside releases it then gets `1.<run>.1` the way
+     a PC installed from the stick does: an unreachable and a foreign-signed
+     source must fail `systemd-sysupdate.service` and show on the login
+     banner, the update must stage, boot and be blessed (see "Update health
+     on the node" in
      [systemd-sysupdate-verification.md](systemd-sysupdate-verification.md)).
-     Two more runs install onto disks that are not empty (#359): again over
-     a Bluefin install (`DOGFOOD_TARGET=prior-install`) and over another
-     OS's GPT disk (`DOGFOOD_TARGET=foreign-gpt`).
+     Two more runs install over a Bluefin install and over another OS's GPT
+     disk (`DOGFOOD_TARGET=prior-install`, `foreign-gpt`; #359).
 5. **Version Derivation:** The release version is set per build with
    `just set-version`: `YY.MM.<run>` for releases, `0.<run>` for every other
    build so it can never sort above a release.
-6. **Automated Publishing:** For pushes to `main` (including Renovate PR
-   merges), GitHub Actions publishes `dist/diskless/` as-is: an immutable
-   GitHub Release `v<image-version>` and an ORAS OCI artifact
-   `ghcr.io/<owner>/bluefin-server:<ver>,latest`. Nodes verify updates
-   against the `SHA256SUMS` / `SHA256SUMS.gpg` already in that set. Every
-   pull request that builds rehearses this path in `release-dry-run`, so the
-   publish code is exercised before it first runs on main. Attestations, the SBOM
-   and the verify commands are in
+6. **Automated Publishing:** every push to `main` (Renovate merges included)
+   publishes `dist/diskless/` as-is (the `release` job; nodes verify updates
+   against that set's own `SHA256SUMS` / `SHA256SUMS.gpg`), and
+   `release-dry-run` rehearses it on every pull request that builds.
+   Attestations, the SBOM and the verify commands are in
    [`systemd-sysupdate-verification.md`](systemd-sysupdate-verification.md).
 
 ## Build time and caches

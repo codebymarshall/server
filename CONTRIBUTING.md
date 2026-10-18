@@ -31,6 +31,8 @@ Pull requests merge through Prow (`.github/workflows/prow.yml`), not the merge b
 - `OWNERS` is generated from `projectbluefin/.project`'s `maintainers.yaml` by its `sync-owners.yml`
   workflow. Do not edit it here: change `maintainers.yaml` in `projectbluefin/.project`.
 - See [`docs/skills/ci-tooling.md`](docs/skills/ci-tooling.md) ("Workflow Structure") for the Prow jobs.
+- Who sets each label (Prow, the hive, Renovate or a person) and what reads it is in the "Labels" table of
+  [`docs/skills/ci-tooling.md`](docs/skills/ci-tooling.md).
 
 ## References
 
