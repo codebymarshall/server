@@ -254,9 +254,10 @@ def test_nouveau_stays_off_the_gpu() -> None:
     lines = [line for line in (SRC / "modprobe-nvidia.conf").read_text().splitlines() if line and line[0] != "#"]
     assert "blacklist nouveau" in lines and "options nouveau modeset=0" in lines
     assert 'install -D -m 0644 "${src}/modprobe-nvidia.conf" "${lib}/modprobe.d/nvidia.conf"' in recipe()["nvidia-sysext-stage"]
-    # The blacklist only covers loads after the merge; udev binds nouveau to
-    # the GPUs before that, so the load helper evicts it first
-    # (tests/unit/nvidia-load_test.bats covers the behaviour).
+    # The base kernel does not build nouveau (patches/freedesktop-sdk/0009).
+    # On a kernel that does, the blacklist only covers loads after the merge;
+    # udev binds nouveau to the GPUs before that, so the load helper evicts it
+    # first (tests/unit/nvidia-load_test.bats covers the behaviour).
     helper = (SRC / "nvidia-load").read_text(encoding="utf-8")
     assert "modprobe -r nouveau" in helper
     assert '"${sysfs}/bus/pci/drivers/nouveau/unbind"' in helper
