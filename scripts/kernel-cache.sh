@@ -95,11 +95,16 @@ stage_cert() {
 auth=""
 
 seed() {
-    local variant="$1" states available
+    local variant="$1" graph states available
     : "${CASD_CLIENT_CERT:?kernel-cache: CASD_CLIENT_CERT is not set}"
     : "${CASD_CLIENT_KEY:?kernel-cache: CASD_CLIENT_KEY is not set}"
     stage_cert "${variant}"
-    if bst_show show --deps all --format "'%{name}'" "${ELEMENTS[@]}" | grep -qxF "${KEYS_ELEMENT}"; then
+    # Read the whole graph before matching: `bst show | grep -q` under
+    # pipefail turns a match into SIGPIPE when grep exits before bst finishes
+    # writing, and a failed `bst show` would look like a graph without the keys.
+    graph="$(bst_show show --deps all --format "'%{name}'" "${ELEMENTS[@]}")" \
+        || { echo "kernel-cache: cannot list the graph of ${ELEMENTS[*]}; refusing to publish" >&2; exit 1; }
+    if grep -qxF "${KEYS_ELEMENT}" <<< "${graph}"; then
         echo "kernel-cache: ${KEYS_ELEMENT} is in the graph of ${ELEMENTS[*]}; refusing to publish" >&2
         exit 1
     fi
