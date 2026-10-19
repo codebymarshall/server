@@ -3,8 +3,9 @@
 bluefin-installer-secure-boot.service decides whether systemd-sysinstall may
 run; its decision logic is tested in bluefin-installer-secure-boot_test.bats.
 This pins how it is wired: sysinstall and the Homelab entries' prompt cannot
-start without it, it asks on the monitor, and it sees the credentials that
-mark an unattended install or allow one without Secure Boot.
+start without it, and it sees the credentials that mark an unattended install
+or allow one without Secure Boot. That it asks on the monitor is pinned with
+the installer's other screens in test_installer_console_path.py.
 """
 
 from __future__ import annotations
@@ -42,17 +43,13 @@ def test_homelab_entries_go_through_the_same_check_before_their_prompt():
     assert "bluefin-homelab-install.service" in SystemdFile(UNIT).words("Unit", "Before")
 
 
-def test_the_check_runs_once_before_sysinstall_on_the_monitor():
+def test_the_check_runs_once_before_sysinstall():
     unit = SystemdFile(UNIT)
     assert "systemd-sysinstall.service" in unit.words("Unit", "Before")
     assert unit.value("Service", "Type") == "oneshot"
     assert unit.value("Service", "RemainAfterExit") == "yes"
     assert unit.value("Service", "ExecStart") == "/usr/libexec/bluefin-installer-secure-boot"
-    assert unit.value("Service", "StandardInput") == "tty"
-    assert unit.value("Service", "StandardOutput") == "tty"
-    assert unit.value("Service", "TTYPath") == "/dev/console"
     assert "/run/bluefin/installer" in unit.words("Unit", "RequiresMountsFor")
-    assert unit.value("Install", "WantedBy") is None
 
 
 def test_the_check_sees_the_unattended_and_the_allow_credentials():

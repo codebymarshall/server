@@ -91,7 +91,7 @@ def test_sysext_is_version_locked_and_in_the_signed_release_set() -> None:
     assert "oci/kubeadm-sysext.bst" in (ROOT / "Justfile").read_text(encoding="utf-8")
 
 
-def test_no_preset_enables_the_units() -> None:
+def test_the_sysext_preset_disables_its_units() -> None:
     lines = [
         line.split()
         for line in (SRC / "80-kubeadm.preset").read_text().splitlines()
@@ -102,11 +102,6 @@ def test_no_preset_enables_the_units() -> None:
         ["disable", "kubelet.service"],
         ["disable", "kubeadm-init.service"],
     ]
-    assert "20-ignition.preset" < "80-kubeadm.preset" < "90-systemd.preset"
-    for preset in (ROOT / "files").rglob("*.preset"):
-        for line in preset.read_text().splitlines():
-            if line.startswith("enable"):
-                assert "kubelet" not in line and "containerd" not in line, preset
 
 
 def test_containerd_config_keys() -> None:

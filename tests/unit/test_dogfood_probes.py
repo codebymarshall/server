@@ -1,6 +1,7 @@
-"""The guest probes the dogfood scripts write (quoted heredocs) parse as bash.
+"""The guest probes the dogfood scripts write (quoted heredocs) pass a bash
+syntax check (`bash -n`); none of them is run here.
 
-A probe that does not parse runs up to the error inside the guest and the
+A probe with a syntax error runs up to the error inside the guest and the
 run then times out, far from the cause; shellcheck of the host script never
 sees the heredoc's contents.
 """
@@ -25,6 +26,6 @@ def test_the_probes_are_found() -> None:
 
 
 @pytest.mark.parametrize(("probe", "body"), PROBES, ids=[p for p, _ in PROBES])
-def test_probe_parses(probe: str, body: str) -> None:
+def test_probe_passes_bash_syntax_check(probe: str, body: str) -> None:
     result = subprocess.run(["bash", "-n"], input=body, capture_output=True, text=True, check=False)
     assert result.returncode == 0, f"{probe}: {result.stderr}"

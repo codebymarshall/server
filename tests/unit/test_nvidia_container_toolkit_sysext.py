@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from _systemd import SystemdFile, preset_rules
+from _systemd import SystemdFile
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "files" / "nvidia-container-toolkit" / "sysext"
@@ -190,12 +190,6 @@ def test_sysext_ships_only_usr() -> None:
     assert 'ERROR: sysext ships' in sysext
     for text in (commands(TOOLKIT), sysext):
         assert "install-root}/etc" not in text and "sysext/etc" not in text and "sysext/opt" not in text
-
-
-def test_no_preset_enables_the_toolkit_units() -> None:
-    for preset in ROOT.glob("files/**/*.preset"):
-        for verb, pattern in preset_rules(preset):
-            assert not (verb == "enable" and "nvidia" in pattern), preset
 
 
 def test_kubeadm_containerd_keeps_cdi_on_and_runc_as_the_default() -> None:

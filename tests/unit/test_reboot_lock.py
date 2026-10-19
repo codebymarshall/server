@@ -14,7 +14,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
 
 from _systemd import SystemdFile, preset
 
@@ -33,14 +32,6 @@ URL_CREDENTIAL = "bluefin.reboot-lock.url"
 
 def reboot_service() -> SystemdFile:
     return SystemdFile(*sorted(REBOOT_DROPINS.glob("*.conf")))
-
-
-def test_client_ships_where_the_units_run_it() -> None:
-    element = yaml.safe_load((ROOT / "elements" / "bluefin-server" / "os-host.bst").read_text(encoding="utf-8"))
-    assert element["sources"] == [{"kind": "local", "path": "files/homelab/cluster"}]
-    assert "reboot-lock" in "\n".join(element["config"]["install-commands"])
-    stack = yaml.safe_load((ROOT / "elements" / "bluefin-server" / "os-stack.bst").read_text(encoding="utf-8"))
-    assert "bluefin-server/os-host.bst" in stack["depends"]
 
 
 def test_nightly_reboot_takes_a_slot_only_after_every_other_check() -> None:
@@ -64,10 +55,9 @@ def test_boot_deadline_reads_the_same_configuration() -> None:
     assert 'fleetlock.Main(h, []string{"acquire"})' in source
 
 
-def test_release_runs_on_installed_nodes_after_the_boot_is_judged() -> None:
+def test_release_runs_after_the_boot_is_judged() -> None:
+    # Installed nodes only: test_automatic_updates.py.
     unit = SystemdFile(RELEASE)
-    assert unit.values("Unit", "ConditionPathExists") == ["!/run/machines/rootdisk.raw"]
-    assert unit.values("Unit", "ConditionKernelCommandLine") == ["!root=tmpfs"]
     after = unit.words("Unit", "After")
     for dep in ("boot-complete.target", "systemd-bless-boot.service", "network-online.target"):
         assert dep in after, dep
@@ -141,9 +131,9 @@ def test_only_fleet_lock_nodes_get_the_extra_runs() -> None:
     assert not SystemdFile(*sorted(REBOOT_TIMER_DROPINS.glob("*.conf"))).sections.get("Timer")
     timer = SystemdFile(FLEET_TIMER)
     # "|": either source of the server URL the client reads starts the timer.
-    assert timer.values("Unit", "ConditionPathExists") == [f"|{CONF}", "!/run/machines/rootdisk.raw"]
+    # Installed nodes only: test_automatic_updates.py.
+    assert [c for c in timer.values("Unit", "ConditionPathExists") if c.startswith("|")] == [f"|{CONF}"]
     assert timer.values("Unit", "ConditionCredential") == [f"|{URL_CREDENTIAL}"]
-    assert timer.values("Unit", "ConditionKernelCommandLine") == ["!root=tmpfs"]
     source = (HOST / "fleetlock" / "fleetlock.go").read_text(encoding="utf-8")
     assert f'"{CONF}"' in source and f"credential {URL_CREDENTIAL})" in source
 

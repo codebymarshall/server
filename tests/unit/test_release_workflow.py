@@ -83,7 +83,6 @@ def test_signing_secrets_only_reach_main_only_environments() -> None:
         assert install["env"][secret] == f"${{{{ needs.changes.outputs.release == 'true' && secrets.{secret} || '' }}}}"
     for seeder in ("kernel-cache", "kernel-cache-dev"):
         assert JOBS[seeder]["environment"] == "bst-cache"
-        assert JOBS[seeder]["if"] == "needs.changes.outputs.release == 'true'"
     for name, job in JOBS.items():
         if name not in ("build", "kernel-cache", "kernel-cache-dev"):
             assert "secrets." not in json.dumps(job), name

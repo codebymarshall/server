@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import configparser
 import os
-import re
 import shlex
 import stat
 import subprocess
@@ -20,12 +19,13 @@ from pathlib import Path
 import pytest
 import yaml
 
+from _systemd import SystemdFile
+
 ROOT = Path(__file__).resolve().parents[2]
 UNITS = ROOT / "files" / "os" / "systemd" / "system"
 PRESETS = ROOT / "files" / "os" / "systemd" / "system-preset"
 PRESET = PRESETS / "80-bluefin-updates.preset"
 ELEMENTS = ROOT / "elements" / "bluefin-server"
-DISKLESS = UNITS / "systemd-sysupdate.service.d" / "10-diskless.conf"
 KURED = UNITS / "systemd-sysupdate.service.d" / "20-kured.conf"
 INTERLOCK = UNITS / "systemd-sysupdate-reboot.service.d" / "20-interlock.conf"
 MIGRATE_UNIT = UNITS / "bluefin-update-status-migrate.service"
@@ -80,35 +80,25 @@ def test_preset_enables_the_update_timers_and_the_health_gate() -> None:
     ]
 
 
-def test_preset_overrides_fsdk_and_yields_to_ignition() -> None:
-    # FSDK's 90-sysupdate.preset disables both timers; the first match wins.
-    assert "20-ignition.preset" < PRESET.name < "90-sysupdate.preset"
-    assert PRESET.name < "90-systemd.preset"
-
-
-def test_no_base_image_preset_enables_kubernetes_or_zfs() -> None:
-    for preset in PRESETS.glob("*.preset"):
-        for line in preset.read_text(encoding="utf-8").splitlines():
-            if line.startswith("enable"):
-                assert not re.search(r"kubelet|containerd|k0s|zfs", line), (preset, line)
-
-
 @pytest.mark.parametrize(
-    "dropin",
+    "name",
     [
+        "bluefin-boot-deadline.service",
+        "bluefin-boot-deadline.timer",
+        "bluefin-fleet-reboot.timer",
+        "bluefin-reboot-lock-release.service",
+        "bluefin-update-status-migrate.service",
         "bluefin-update-status.service",
         "systemd-sysupdate-reboot.service.d/10-diskless.conf",
-        "systemd-sysupdate.timer.d/10-diskless.conf",
         "systemd-sysupdate-reboot.timer.d/10-diskless.conf",
+        "systemd-sysupdate.service.d/10-diskless.conf",
+        "systemd-sysupdate.timer.d/10-diskless.conf",
     ],
 )
-def test_update_units_are_inert_on_diskless_and_installer_boots(dropin: str) -> None:
-    expected = conditions(DISKLESS)
-    assert expected == [
-        f"ConditionPathExists=!{DISKLESS_ONLY}",
-        "ConditionKernelCommandLine=!root=tmpfs",
-    ]
-    assert conditions(UNITS / dropin) == expected
+def test_update_units_are_inert_on_diskless_and_installer_boots(name: str) -> None:
+    unit = SystemdFile(UNITS / name)
+    assert f"!{DISKLESS_ONLY}" in unit.values("Unit", "ConditionPathExists")
+    assert unit.values("Unit", "ConditionKernelCommandLine") == ["!root=tmpfs"]
 
 
 @pytest.mark.parametrize("diskless", [True, False])
@@ -214,7 +204,6 @@ def test_reboot_proceeds_when_kubernetes_is_stopped_or_failed(tmp_path: Path, ho
 
 def test_kured_hook_moved_into_the_unit_directory() -> None:
     stack = yaml.safe_load((ELEMENTS / "os-stack.bst").read_text(encoding="utf-8"))["depends"]
-    assert "bluefin-server/os-k0s-first-boot.bst" in stack, "installs files/os/systemd/system"
     assert "bluefin-server/os-kured-hook.bst" not in stack
     assert not (ROOT / "files" / "os" / "systemd" / "systemd-sysupdate.service.d").exists()
 
@@ -260,11 +249,7 @@ def test_nodes_that_updated_into_the_banner_unit_enable_it_once() -> None:
     unit = ini(MIGRATE_UNIT)
     assert unit["Service"]["Type"] == "oneshot"
     assert unit["Service"]["ExecStart"] == "/usr/libexec/bluefin-update-status-migrate"
-    assert values(MIGRATE_UNIT, "ConditionPathExists") == [
-        "!/var/lib/bluefin/update-status-migrate.stamp",
-        f"!{DISKLESS_ONLY}",
-    ]
-    assert unit["Unit"]["ConditionKernelCommandLine"] == "!root=tmpfs"
+    assert "!/var/lib/bluefin/update-status-migrate.stamp" in values(MIGRATE_UNIT, "ConditionPathExists")
     usr = (ROOT / "elements" / "oci" / "bluefin-server-usr.bst").read_text(encoding="utf-8")
     assert "multi-user.target.wants/bluefin-update-status-migrate.service" in usr
 

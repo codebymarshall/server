@@ -21,6 +21,8 @@ import re
 import stat
 from pathlib import Path
 
+import pytest
+
 from _systemd import SystemdFile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +35,13 @@ DONE = UNITS / "bluefin-installer-done.service"
 PROMPT = UNITS / "bluefin-root-password-prompt.service"
 HOMELAB = UNITS / "bluefin-homelab-install.service"
 HELPERS = ("bluefin-installer-disk", "bluefin-installer-done", "bluefin-root-password-prompt")
+SCREENS = (
+    "bluefin-home-server-install.service",
+    "bluefin-homelab-install.service",
+    "bluefin-installer-disk.service",
+    "bluefin-installer-done.service",
+    "bluefin-installer-secure-boot.service",
+)
 
 
 def test_sysinstall_cannot_start_without_the_disk_question():
@@ -98,20 +107,20 @@ def test_the_done_screen_follows_a_good_install_and_restarts():
     assert done.commands() == [["/usr/libexec/bluefin-installer-done"]]
 
 
-def test_the_questions_and_the_done_screen_are_on_the_monitor():
-    for path in (DISK, DONE):
-        unit = SystemdFile(path)
-        assert unit.value("Service", "StandardInput") == "tty", path.name
-        assert unit.value("Service", "StandardOutput") == "tty", path.name
-        assert unit.value("Service", "TTYPath") == "/dev/console", path.name
+@pytest.mark.parametrize("name", SCREENS)
+def test_the_questions_and_the_done_screen_are_on_the_monitor(name: str):
+    unit = SystemdFile(UNITS / name)
+    assert unit.value("Service", "StandardInput") == "tty"
+    assert unit.value("Service", "StandardOutput") == "tty"
+    assert unit.value("Service", "TTYPath") == "/dev/console"
 
 
-def test_installer_units_cannot_start_on_an_installed_node():
-    # Pulled in by the sysinstall drop-in only: no [Install] section, no preset.
-    for path in (DISK, DONE):
-        assert SystemdFile(path).sections.get("Install") is None, path.name
+@pytest.mark.parametrize("name", SCREENS)
+def test_installer_units_cannot_start_on_an_installed_node(name: str):
+    # Pulled in by the installer only: no [Install] section, no preset.
+    assert SystemdFile(UNITS / name).sections.get("Install") is None
     presets = " ".join(p.read_text(encoding="utf-8") for p in (ROOT / "files" / "os" / "systemd" / "system-preset").glob("*.preset"))
-    assert "bluefin-installer-disk" not in presets and "bluefin-installer-done" not in presets
+    assert name.removesuffix(".service") not in presets
 
 
 def test_the_root_password_prompt_imports_the_credentials_that_answer_it():

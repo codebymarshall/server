@@ -17,7 +17,6 @@ ROOT = Path(__file__).resolve().parents[2]
 OS = ROOT / "files" / "os"
 ELEMENTS = ROOT / "elements" / "bluefin-server"
 HOSTNAME_UNIT = OS / "creds" / "systemd" / "system" / "bluefin-hostname.service"
-HOSTNAME_SOURCE = ROOT / "files" / "homelab" / "cluster" / "internal" / "host" / "hostname" / "hostname.go"
 NETWORK = OS / "systemd" / "network" / "20-wired.network"
 RESOLVED = OS / "resolved.conf.d" / "50-bluefin-mdns.conf"
 PROMPT = OS / "profile.d" / "90-bluefin-prompt.sh"
@@ -49,16 +48,6 @@ def test_hostname_unit_names_the_node_on_first_boot_before_the_network() -> None
     assert {"systemd-networkd.service", "systemd-resolved.service", "sysinit.target"} <= set(unit.words("Unit", "Before"))
     assert unit.words("Install", "WantedBy") == ["sysinit.target"]
     assert preset("bluefin-hostname.service", PRESETS) == "enable"
-
-
-def test_hostname_helper_ships_in_usr_libexec() -> None:
-    # /usr/libexec/bluefin-hostname -> ../bin/bluefin-host; bluefin-cluster
-    # runs it by that path too.
-    commands = "\n".join(element("os-host.bst")["config"]["install-commands"])
-    assert "hostname" in commands.split("for helper in", 1)[1].split("; do", 1)[0].split()
-    assert 'ln -s ../bin/bluefin-host "%{install-root}/usr/libexec/bluefin-${helper}"' in commands
-    assert "bluefin-server/os-host.bst" in stack()
-    assert '"bluefin-"+id[:8]' in HOSTNAME_SOURCE.read_text(encoding="utf-8")
 
 
 

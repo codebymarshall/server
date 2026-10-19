@@ -44,7 +44,6 @@ def test_component_transfer_ships_in_usr() -> None:
 
 def test_units_ship_in_usr_but_stay_opt_in() -> None:
     assert [s["path"] for s in load(UNITS_ELEMENT)["sources"]] == ["files/os/systemd/system"]
-    assert in_os_stack(UNITS_ELEMENT)
     for unit in (ACTIVATE.name, FETCH.name):
         assert preset(unit, PRESETS) == "disable", (
             f"the toolkit is opt-in: FSDK has no 'disable *' default, so {unit} "

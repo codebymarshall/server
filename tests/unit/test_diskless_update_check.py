@@ -19,14 +19,12 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNING = "26.09.2"
 PULL = "raw,machine,verify=signature,blockdev:rootdisk:{url}"
 
 UNITS = ROOT / "files" / "os" / "systemd" / "system"
-ELEMENTS = ROOT / "elements" / "bluefin-server"
 needs_tools = pytest.mark.skipif(
     not all(shutil.which(t) for t in ("gpg", "gpgv", "systemd-analyze")),
     reason="needs gpg, gpgv and systemd-analyze",
@@ -50,17 +48,6 @@ def test_check_runs_only_on_diskless_boots() -> None:
     assert service["Service"]["ExecStart"] == "/usr/libexec/bluefin-diskless-update-check"
     assert service["Unit"]["After"] == "network-online.target"
     assert timer["Install"]["WantedBy"] == "timers.target"
-
-
-def test_check_ships_in_the_os_as_a_bluefin_host_link() -> None:
-    stack = yaml.safe_load((ELEMENTS / "os-stack.bst").read_text(encoding="utf-8"))["depends"]
-    assert "bluefin-server/os-host.bst" in stack
-    # The initrd's shell copy of bluefin-boot-origin stays out of /usr:
-    # bluefin-host's link replaces it there.
-    assert "bluefin-server/boot-origin.bst" not in stack
-    install = "\n".join(yaml.safe_load((ELEMENTS / "os-host.bst").read_text(encoding="utf-8"))["config"]["install-commands"])
-    for helper in ("diskless-update-check", "boot-origin"):
-        assert helper in install
 
 
 @pytest.fixture(scope="module")

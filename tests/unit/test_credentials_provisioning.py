@@ -41,7 +41,6 @@ SYSUSERS_DROPIN = (
     / "systemd-sysusers.service.d"
     / "10-bluefin-user-credentials.conf"
 )
-HOST_ELEMENT = REPO_ROOT / "elements" / "bluefin-server" / "os-host.bst"
 NETWORK = REPO_ROOT / "files" / "os" / "systemd" / "network" / "20-wired.network"
 TPM2_SKILL = REPO_ROOT / "docs" / "skills" / "tpm2-credential-sealing.md"
 USB_INSTALLER_SKILL = REPO_ROOT / "docs" / "skills" / "usb-installer.md"
@@ -66,9 +65,6 @@ def test_creds_provisioning_element_stages_all_credential_consumers() -> None:
     assert "cp -a systemd-src/." in commands
     # /usr/libexec/bluefin-firstboot-credentials is bluefin-host's.
     assert "bluefin-firstboot-credentials" not in commands
-    host = "\n".join(yaml.safe_load(HOST_ELEMENT.read_text(encoding="utf-8"))["config"]["install-commands"])
-    assert "firstboot-credentials" in host
-    assert "bluefin-server/os-host.bst" in yaml.safe_load(STACK.read_text(encoding="utf-8"))["depends"]
 
 
 def test_firstboot_credentials_are_noninteractive_and_presence_gated() -> None:

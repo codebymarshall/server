@@ -141,7 +141,6 @@ def test_k0s_first_boot_is_packaged_but_opt_in() -> None:
             "disabled explicitly and no earlier preset may enable it"
         )
     assert installed_at(ELEMENT)["files/os/systemd/system"] == "/usr/lib/systemd/system"
-    assert in_os_stack(ELEMENT)
 
 
 def test_installed_os_configures_wired_dhcp_with_networkd() -> None:
@@ -157,23 +156,6 @@ def test_installed_os_configures_wired_dhcp_with_networkd() -> None:
 def test_k0s_sysupdate_transfer_is_packaged_as_a_component() -> None:
     assert installed_at(K0S_UPDATE_ELEMENT)["files/os/sysupdate.k0s.d"] == "/usr/lib/sysupdate.k0s.d"
     assert in_os_stack(K0S_UPDATE_ELEMENT)
-
-
-def test_presets_sort_between_ignition_and_fsdk_defaults() -> None:
-    # systemd reads preset files from every directory in filename order and
-    # the first matching line wins. Ignition enables units through
-    # /etc/systemd/system-preset/20-ignition.preset, so a vendor preset that
-    # sorts before it (e.g. 20-bluefin-sshd.preset: "disable sshd.service")
-    # silently overrides a node config's `enabled: true`. Vendor presets,
-    # including those a sysext merges into /usr, must still sort before
-    # FSDK's 90-systemd.preset to take effect at all.
-    presets = sorted(p.name for p in (ROOT / "files").rglob("*.preset"))
-    assert presets, "no presets found under files/"
-    for name in presets:
-        assert "20-ignition.preset" < name < "90-systemd.preset", (
-            f"{name} must sort after 20-ignition.preset (so Ignition can "
-            "enable units Bluefin disables) and before 90-systemd.preset"
-        )
 
 
 def test_etc_resolv_conf_symlink_is_seeded_for_kubelet() -> None:

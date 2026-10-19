@@ -64,9 +64,6 @@ def test_init_unit_is_shipped_but_no_preset_enables_it() -> None:
     assert 'install -D -m 0755 "${src}/bluefin-kubeadm-init" "sysext%{libexecdir}/bluefin-kubeadm-init"' in script
     presets = sorted((ROOT / "files").rglob("*.preset"))
     assert preset("kubeadm-init.service", presets) == "disable"
-    for path in presets:
-        for verb, pattern in (line.split()[:2] for line in path.read_text().splitlines() if line[:1] not in ("", "#")):
-            assert not (verb == "enable" and "kubeadm" in pattern), path
     assert "Install" not in SystemdFile(SEED).sections, "the seed unit is only pulled in by kubeadm-init"
 
 

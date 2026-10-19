@@ -171,13 +171,11 @@ def test_unit_is_installer_only_and_retains_runtime_files() -> None:
     assert unit.value("Service", "RuntimeDirectory") == "bluefin-home-server-install"
     assert unit.value("Service", "RuntimeDirectoryMode") == "0700"
     assert unit.value("Service", "RemainAfterExit") == "yes"
-    assert unit.value("Service", "TTYPath") == "/dev/console"
     assert unit.value("Service", "ExecCondition") == "/usr/bin/systemctl is-active --quiet bluefin-installer-secure-boot.service"
     assert set(unit.values("Service", "ImportCredential")) >= {
         "bluefin.install-home-server", "bluefin.homebrew.*", "sysusers.extra", "tmpfiles.extra",
         "passwd.hashed-password.*", "ssh.authorized_keys.*", "systemd.unit-dropin.systemd-sysinstall.service*",
     }
-    assert unit.values("Install", "WantedBy") == []
     disk = SystemdFile(ROOT / "files/os/creds/systemd/system/bluefin-installer-disk.service")
     assert "bluefin-home-server-install.service" in disk.words("Unit", "Requires")
     assert "bluefin-home-server-install.service" in disk.words("Unit", "After")

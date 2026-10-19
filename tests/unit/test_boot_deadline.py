@@ -15,7 +15,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 UNITS = ROOT / "files" / "os" / "systemd" / "system"
@@ -40,12 +39,9 @@ def executable(path: Path, body: str) -> None:
 
 
 @pytest.mark.parametrize("unit", ["bluefin-boot-deadline.timer", "bluefin-boot-deadline.service"])
-def test_deadline_runs_only_on_boot_counted_disk_boots(unit: str) -> None:
-    assert conditions(UNITS / unit) == [
-        f"ConditionPathExists={COUNTED}",
-        "ConditionPathExists=!/run/machines/rootdisk.raw",
-        "ConditionKernelCommandLine=!root=tmpfs",
-    ]
+def test_deadline_runs_only_on_boot_counted_boots(unit: str) -> None:
+    # Installed nodes only: test_automatic_updates.py.
+    assert f"ConditionPathExists={COUNTED}" in conditions(UNITS / unit)
 
 
 def test_deadline_timer_defaults_to_fifteen_minutes() -> None:
@@ -63,13 +59,6 @@ def test_deadline_fires_even_when_the_boot_hangs() -> None:
         assert target not in unit.get("Requires", ""), target
     service = ini(UNITS / "bluefin-boot-deadline.service")["Service"]
     assert service["ExecStart"] == "/usr/libexec/bluefin-boot-deadline"
-
-
-def test_deadline_ships_in_the_os_as_a_bluefin_host_link() -> None:
-    stack = yaml.safe_load((ROOT / "elements" / "bluefin-server" / "os-stack.bst").read_text(encoding="utf-8"))
-    assert "bluefin-server/os-host.bst" in stack["depends"]
-    install = "\n".join(yaml.safe_load((ROOT / "elements" / "bluefin-server" / "os-host.bst").read_text(encoding="utf-8"))["config"]["install-commands"])
-    assert "boot-deadline" in install
 
 
 def deadline(

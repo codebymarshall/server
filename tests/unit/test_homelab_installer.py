@@ -113,10 +113,6 @@ def test_unit_runs_only_from_a_homelab_entry_before_sysinstall() -> None:
     assert unit.value("Service", "RemainAfterExit") == "yes"
     assert unit.value("Service", "RuntimeDirectory") == "bluefin-homelab-install"
     assert set(unit.values("Service", "ImportCredential")) == {"bluefin.install-homelab", "bluefin-cluster.passphrase"}
-    assert (unit.value("Service", "StandardInput"), unit.value("Service", "TTYPath")) == ("tty", "/dev/console")
-    # Pulled in by the installer's sysinstall drop-in only; no preset or
-    # [Install] section can start it on an installed node.
-    assert unit.values("Install", "WantedBy") == []
     assert "install -Dm0755 libexec-src/bluefin-homelab-install" in CREDS_ELEMENT.read_text(encoding="utf-8")
     assert SCRIPT.stat().st_mode & stat.S_IXUSR
 

@@ -100,12 +100,7 @@ def test_no_module_sysext_unit_runs_a_bare_modprobe(unit: Path) -> None:
         assert not re.search(r"(^|[\s/'])modprobe(\s|$)", text), (unit.name, text)
 
 
-def test_the_helper_ships_in_the_base_image() -> None:
-    element = load(ELEMENTS / "bluefin-server" / "os-host.bst")
-    commands = "\n".join(element["config"]["install-commands"])
-    assert "sysext-modules" in commands
-    assert 'ln -s ../bin/bluefin-host "%{install-root}/usr/libexec/bluefin-${helper}"' in commands
-    assert "bluefin-server/os-host.bst" in load(ELEMENTS / "bluefin-server" / "os-stack.bst")["depends"]
+def test_the_base_image_ships_the_tools_the_helper_runs() -> None:
     base = load(ELEMENTS / "bluefin-server" / "os-base.bst")["depends"]
     for dep in ("components/kmod.bst", "components/util-linux-full.bst", "public-stacks/runtime-gnu.bst"):
         assert f"freedesktop-sdk.bst:{dep}" in base

@@ -135,14 +135,19 @@ def test_every_template_is_listed_and_paired() -> None:
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED))
-def test_butane_compiles_to_ignition_3_6(name: str) -> None:
+def test_butane_source_is_fcos_1_7_and_committed_ignition_is_3_6(name: str) -> None:
     bu = butane(name)
     assert (bu["variant"], bu["version"]) == ("fcos", "1.7.0")
     assert ignition(name)["ignition"]["version"] == "3.6.0"
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED))
-def test_ignition_is_the_compiled_butane(name: str) -> None:
+def test_committed_ignition_matches_butane_source(name: str) -> None:
+    """The committed .ign says what the YAML-parsed .bu says.
+
+    Butane is not run here: `just homelab-templates 1` recompiles and compares
+    byte-for-byte.
+    """
     bu, ign = butane(name), ignition(name)
     bfiles, ifiles = bu_files(name), ign_files(name)
     assert bfiles.keys() == ifiles.keys()
