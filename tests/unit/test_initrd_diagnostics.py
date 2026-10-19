@@ -11,7 +11,6 @@ from __future__ import annotations
 import http.server
 import os
 import re
-import shutil
 import socket
 import subprocess
 import threading
@@ -100,11 +99,6 @@ def test_helper_is_executable_bash_without_sed_or_awk() -> None:
     subprocess.run(["bash", "-n", str(HELPER)], check=True)
     code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
     assert not re.search(r"\b(sed|awk|gawk)\b", code), "the initrd has no sed or awk"
-
-
-@pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck not installed")
-def test_helper_is_shellcheck_clean() -> None:
-    subprocess.run(["shellcheck", "-S", "style", str(HELPER)], check=True)
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):

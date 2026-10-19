@@ -9,7 +9,6 @@ mark an unattended install or allow one without Secure Boot.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from _systemd import SystemdFile
@@ -63,11 +62,10 @@ def test_the_check_sees_the_unattended_and_the_allow_credentials():
     assert "systemd.unit-dropin.systemd-sysinstall.service*" in imported
 
 
-def test_the_helper_is_installed_and_shellcheck_clean(shellcheck: str):
+def test_the_helper_is_installed():
     text = CREDS_ELEMENT.read_text(encoding="utf-8")
     assert "libexec-src/bluefin-installer-secure-boot" in text
     assert '"%{install-root}/usr/libexec/bluefin-installer-secure-boot"' in text
-    subprocess.run([shellcheck, str(SCRIPT)], check=True)
 
 
 def test_the_stick_carries_what_the_enrollment_choice_relies_on():

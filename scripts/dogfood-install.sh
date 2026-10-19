@@ -161,6 +161,7 @@ sysext_active() {
     grep -Eq "PROBE nvidia-no-gpu=[1-9]" "${log}"
     grep -q "PROBE nvidia-rejected=0" "${log}"
     grep -q "PROBE nouveau-blacklisted=1" "${log}"
+    # shellcheck disable=SC2012 # release file names have no odd characters
     ctk="$(ls "${next}"/nvidia-container-toolkit-*.raw.zst | sed -n 's|.*/nvidia-container-toolkit-\(.*\)\.raw\.zst$|\1|p')"
     grep -q "PROBE nvidia-toolkit=merged activate=success ctk=NVIDIA Container Toolkit CLI version ${ctk}" "${log}"
     grep -Eq "PROBE nvidia-toolkit-staged=.*nvidia-container-toolkit-${ctk}\.raw " "${log}"
@@ -189,6 +190,7 @@ grep -q 'PROBE identity=ok hostname=dogfood-renamed static=dogfood-renamed ' "${
 
 echo "==> 4/4 boot the updated disk"
 DOGFOOD_BOOT=disk run "${next}" "${state}/disk.probe" | tee "${state}/4-updated.log"
+# shellcheck disable=SC2012 # release file names have no odd characters
 new_ver="$(ls "${next}"/bluefin-server-[0-9]*.efi | sed -n 's|.*/bluefin-server-\(.*\)\.efi$|\1|p')"
 grep -q "PROBE os=bluefin-server ${new_ver}" "${state}/4-updated.log"
 sysext_active "${new_ver}" "${state}/4-updated.log"
@@ -196,6 +198,7 @@ grep -q "PROBE health=active active bless=good" "${state}/4-updated.log"
 grep -q 'PROBE identity=ok hostname=dogfood-renamed static=dogfood-renamed ' "${state}/4-updated.log"
 [ -n "${broken}" ] || { echo "PASS: installed, updated A->B and booted ${new_ver} with the ${features} sysext(s)"; exit 0; }
 
+# shellcheck disable=SC2012 # release file names have no odd characters
 bad_ver="$(ls "${broken}"/bluefin-server-[0-9]*.efi | sed -n 's|.*/bluefin-server-\(.*\)\.efi$|\1|p')"
 mode="${DOGFOOD_BROKEN:-slot}"
 case "${mode}" in

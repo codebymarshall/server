@@ -7,7 +7,6 @@ nothing else notices when a unit is renamed or a path moves under it.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 from _systemd import SystemdFile
@@ -46,8 +45,7 @@ def test_every_asserted_probe_key_is_emitted() -> None:
     assert asserted and asserted <= emitted
 
 
-def test_test_only_cni_is_pinned_and_recipe_exists(shellcheck: str) -> None:
+def test_test_only_cni_is_pinned_and_recipe_exists() -> None:
     assert re.search(r"^cilium_sha256=[0-9a-f]{64}$", TEXT, re.M)
     assert 'sha256sum -c --quiet -' in TEXT
     assert "dogfood-kubeadm:\n    bash scripts/dogfood-kubeadm.sh dist/diskless" in (ROOT / "Justfile").read_text(encoding="utf-8")
-    subprocess.run([shellcheck, str(SCRIPT)], check=True)

@@ -167,6 +167,7 @@ substitutions() {
 	: >"$1"
 	for name in "${!PATTERN[@]}"; do
 		value=$(input "${name}") || continue
+		# shellcheck disable=SC2016 # sed matches the literal ${HOMELAB_<name>}
 		printf 's|\\${HOMELAB_%s}|%s|g\n' "${name}" "${value}" >>"$1"
 	done
 }
@@ -318,6 +319,7 @@ apply_file() {
 	local file=$1 rendered missing deadline kind ns name
 	rendered=${WORK}/$(basename "${file}")
 	sed -f "${WORK}/inputs.sed" "${file}" >"${rendered}"
+	# shellcheck disable=SC2016 # grep finds, tr strips the literal ${HOMELAB_<name>}
 	missing=$(grep -o '\${HOMELAB_[A-Z0-9_]*}' "${rendered}" | sort -u | tr -d '${}' | tr '\n' ' ')
 	if [ -n "${missing}" ]; then
 		notice "${COMPONENT}: skipping $(basename "${file}"): ${missing% } not set in /etc/bluefin/homelab.conf"

@@ -12,6 +12,7 @@ shift
 cat "$@" | while IFS= read -r line; do
   pattern="$(printf '%s' "${line%%#*}" | tr -d '[:space:]')"
   [ -n "${pattern}" ] || continue
+  # shellcheck disable=SC2086 # the pattern is a glob; it must expand
   set -- "${root}"/${pattern}
   if [ ! -e "$1" ] && [ ! -L "$1" ]; then
     echo "prune: pattern matches nothing: ${pattern}" >&2

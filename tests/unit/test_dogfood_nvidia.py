@@ -17,7 +17,6 @@ booting anything.
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -190,7 +189,3 @@ def test_the_just_recipe_passes_a_built_flavour_and_the_image_version() -> None:
     assert ".raw.zst" in recipe
     assert (ROOT / "elements" / "oci" / f"{default[1]}-sysext.bst").is_file()
     assert variables(IMAGE_FILE)["image-version"]
-
-
-def test_the_script_is_shellcheck_clean(shellcheck: str) -> None:
-    subprocess.run([shellcheck, "-S", "style", str(SCRIPT)], check=True)

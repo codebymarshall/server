@@ -19,6 +19,7 @@ for file in /etc/bluefin-homebrew/runtime.env "/etc/bluefin-homebrew/runtime.$EU
             echo "Unsupported engine environment assignment in $file" >&2; exit 126;
         }
         variable=${assignment%%=*}
+        # shellcheck disable=SC2163 # assignment is NAME=value, exported as such
         [[ -v $variable ]] || export "$assignment"
     done < "$file"
 done

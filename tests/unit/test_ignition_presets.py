@@ -239,6 +239,5 @@ def test_presets_run_after_files_and_before_switch_root():
     assert service.value("Unit", "OnFailure") == "emergency.target"
 
 
-def test_the_script_is_shellcheck_clean(shellcheck):
+def test_the_script_is_executable():
     assert os.access(SCRIPT, os.X_OK)
-    subprocess.run([shellcheck, str(SCRIPT)], check=True)

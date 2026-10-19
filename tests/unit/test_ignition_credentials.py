@@ -75,10 +75,6 @@ def test_ships_in_the_initrd_stack_and_is_executable_bash() -> None:
     subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
 
 
-def test_the_script_is_shellcheck_clean(shellcheck: str) -> None:
-    subprocess.run([shellcheck, "-S", "style", str(SCRIPT)], check=True)
-
-
 @pytest.fixture(scope="module")
 def keys(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     base = tmp_path_factory.mktemp("gpg")

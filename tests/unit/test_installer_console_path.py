@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import re
 import stat
-import subprocess
 from pathlib import Path
 
 from _systemd import SystemdFile
@@ -124,7 +123,7 @@ def test_the_root_password_prompt_imports_the_credentials_that_answer_it():
     assert unit.commands() == [["/usr/libexec/bluefin-root-password-prompt"]]
 
 
-def test_the_helpers_are_installed_executable_and_shellcheck_clean(shellcheck: str):
+def test_the_helpers_are_installed_and_executable():
     element = CREDS_ELEMENT.read_text(encoding="utf-8")
     for name in HELPERS:
         script = LIBEXEC / name
@@ -132,7 +131,6 @@ def test_the_helpers_are_installed_executable_and_shellcheck_clean(shellcheck: s
         assert f'"%{{install-root}}/usr/libexec/{name}"' in element
         assert script.stat().st_mode & stat.S_IXUSR
         assert script.read_text(encoding="utf-8").startswith("#!/usr/bin/bash\n")
-        subprocess.run([shellcheck, str(script)], check=True)
 
 
 def test_no_helper_ships_a_password():

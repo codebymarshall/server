@@ -86,10 +86,6 @@ def test_helper_is_bash_that_passes_syntax() -> None:
     subprocess.run(["bash", "-n", str(HELPER)], check=True)
 
 
-def test_helper_is_shellcheck_clean_at_warning_level(shellcheck: str) -> None:
-    subprocess.run([shellcheck, "-S", "warning", str(HELPER)], check=True)
-
-
 def test_prepends_imports_to_a_pre_existing_config_without_them(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
     config.write_text(_seeded_kubeadm_config(), encoding="utf-8")

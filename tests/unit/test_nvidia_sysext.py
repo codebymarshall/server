@@ -264,10 +264,6 @@ def test_nouveau_stays_off_the_gpu() -> None:
     assert 'gpus_dir="${NVIDIA_LOAD_GPUS:-/proc/driver/nvidia/gpus}"' in helper
 
 
-def test_the_load_helper_is_shellcheck_clean(shellcheck: str) -> None:
-    subprocess.run([shellcheck, "-S", "style", str(SRC / "nvidia-load")], check=True)
-
-
 def test_nothing_in_the_base_image_enables_or_ships_the_driver() -> None:
     for preset in ROOT.joinpath("files").rglob("*.preset"):
         for verb, pattern in preset_rules(preset):

@@ -173,6 +173,7 @@ target_dev="${DOGFOOD_TARGET_DEV:-/dev/disk/by-id/virtio-${target_serial}}"
 install_args="${DOGFOOD_SYSINSTALL_ARGS:---confirm=no}"
 dropin_src="${here}/../files/os/systemd/system/systemd-sysinstall.service.d/10-bluefin-installer.conf"
 
+# shellcheck disable=SC2012 # release file names have no odd characters
 installer="$(ls "${dir}"/bluefin-server-installer_*.raw 2>/dev/null | tail -n1)" \
     || { echo "ERROR: no bluefin-server-installer_<ver>.raw in ${dir}" >&2; exit 1; }
 ver="${installer##*/bluefin-server-installer_}"; ver="${ver%.raw}"
@@ -262,6 +263,7 @@ sfdisk -l "${target}" 2>/dev/null | sed -n '/^Device/,$p' | sed 's/^/    /' || t
 
 cred() { printf 'type=11,value=io.systemd.credential.binary:%s=%s' "$1" "$(base64 -w0 < "$2")"; }
 
+# shellcheck disable=SC2054 # commas belong to the QEMU options
 qemu=(qemu-system-x86_64
     "${machine[@]}" -cpu host -m "${mem}" -smp 2
     -drive if=pflash,format=raw,unit=0,readonly=on,file="${code}"
@@ -269,6 +271,7 @@ qemu=(qemu-system-x86_64
     -display none -no-reboot
     )
 # snapshot=on keeps the release artifact untouched.
+# shellcheck disable=SC2054 # commas belong to the QEMU options
 stick=(-drive "if=none,id=stick,format=raw,snapshot=on,file=${installer}"
        -device virtio-blk-pci,drive=stick,serial=bluefin-installer)
 disk=(-drive "if=none,id=target,format=raw,file=${target}"
@@ -734,7 +737,7 @@ FAILURE
     last_screen "${name}" | sed '/^$/d' | sed 's/^/    screen| /'
     type_keys "${name}" $'yes\n'
     wait_screen "${name}" 'is installed\.' "${timeout_s}"
-    hold_console "${name}" done 'is installed\.'
+    hold_console "${name}" "done" 'is installed\.'
     # Enter restarts at once, without the countdown.
     type_keys "${name}" $'\n'
     boot_wait "${name}" ''

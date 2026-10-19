@@ -53,6 +53,7 @@ port="${DOGFOOD_PORT:-8765}"
 mem="${DOGFOOD_MEM:-4096}"
 timeout_s="${DOGFOOD_TIMEOUT:-600}"
 
+# shellcheck disable=SC2012 # release file names have no odd characters
 esp="$(ls "${dir}"/bluefin-server-netboot_*.esp.raw | tail -n1)"
 ver="${esp##*/bluefin-server-netboot_}"; ver="${ver%.esp.raw}"
 image="bluefin-server_${ver}.raw"
@@ -74,6 +75,7 @@ work="$(mktemp -d /tmp/bluefin-dogfood.XXXXXX)"
 probe_log="${DOGFOOD_PROBE_LOG:-${work}/probe.log}"
 # Never leave a guest behind: an orphaned QEMU keeps its port and the caller's
 # locks. Only kill PIDs that are set; `kill 0` signals the whole process group.
+# shellcheck disable=SC2329 # the EXIT trap below runs it
 cleanup() {
     local pid
     for pid in ${qemu_pid:-} ${enroll_pid:-} ${http_pid:-}; do kill "${pid}" 2>/dev/null || true; done
@@ -130,6 +132,7 @@ wait_for() {
 }
 
 printf 'raw,machine,verify=signature,blockdev:rootdisk:http://10.0.2.2:%s/%s\n' "${port}" "${image}" > "${work}/import.pull"
+# shellcheck disable=SC2054 # commas belong to the QEMU options
 qemu=(qemu-system-x86_64
     -machine q35,smm=on,accel=kvm -cpu host -m "${mem}" -smp 2
     -global driver=cfi.pflash01,property=secure,value=on
@@ -147,6 +150,7 @@ if [ "${boot}" = http ] && [ ! -s "${vars}.enrolled" ]; then
     enroll_pid=$!
     # systemd-boot resets the machine after enrolling; the firmware loading a
     # boot option again proves the variable store has the keys.
+    # shellcheck disable=SC2329 # wait_for runs it by name
     enrolled_and_reset() { sed -n '/successfully enrolled/,$p' "${work}/enroll.log" 2>/dev/null | grep -aq 'BdsDxe: loading'; }
     rc=0
     wait_for 90 "${enroll_pid}" enrolled_and_reset || rc=$?
@@ -157,12 +161,14 @@ if [ "${boot}" = http ] && [ ! -s "${vars}.enrolled" ]; then
     echo enrolled > "${vars}.enrolled"
 fi
 if [ "${boot}" = http ]; then
+    # shellcheck disable=SC2054 # commas belong to the QEMU options
     qemu+=(-netdev "user,id=n0,bootfile=${DOGFOOD_BOOT_URL:-http://10.0.2.2:${port}/bluefin-server-netboot_${ver}.efi}"
            -device virtio-net-pci,netdev=n0,bootindex=1)
 elif [ -n "${DOGFOOD_NET:-}" ]; then
     read -r -d "" -a net_args <<<"${DOGFOOD_NET}" || true
     qemu+=("${net_args[@]}")
 else
+    # shellcheck disable=SC2054 # commas belong to the QEMU options
     qemu+=(-netdev user,id=n0 -device virtio-net-pci,netdev=n0)
 fi
 if [ "${boot}" = netboot ]; then
@@ -253,6 +259,7 @@ fi
 PROBE
 [ -n "${DOGFOOD_EXTRA_PROBE:-}" ] && cat "${DOGFOOD_EXTRA_PROBE}" >> "${work}/probe.sh"
 echo 'sync' >> "${work}/probe.sh"
+# shellcheck disable=SC2016,SC2028 # a line of the guest's probe
 echo 'echo "PROBE failed=$(systemctl --failed --no-legend | wc -l) $(systemctl --failed --no-legend --plain | cut -d" " -f1 | tr "\n" " ")"' >> "${work}/probe.sh"
 
 cat > "${work}/probe.service" <<'UNIT'
@@ -286,8 +293,10 @@ clean_log() { sed -E 's/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g; s/\x1bP[^\x1b]*\x1b\
 refused() { { clean_log < "${work}/serial.log"; } 2>/dev/null | grep -aqE "${refusal_re}"; }
 status=1
 if [ -n "${refusal}" ]; then
+    # shellcheck disable=SC2329 # wait_for runs it by name
     stop() { probe_done || refused; }
 else
+    # shellcheck disable=SC2329 # wait_for runs it by name
     stop() { probe_done; }
 fi
 wait_for "${timeout_s}" "${qemu_pid}" stop && status=0
