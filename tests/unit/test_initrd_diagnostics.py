@@ -297,6 +297,7 @@ def test_redirects_are_followed_to_the_final_size(env: Env, server) -> None:
     assert "redirect.raw (4000 MiB)" in env.console()
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("status", [403, 404, 405, 500, 501])
 def test_head_errors_do_not_block_the_download(env: Env, server, status: int) -> None:
     # A signed object-store URL covers the method: GET works, HEAD gets 403.

@@ -1,0 +1,19 @@
+# Coverage measurement for the repo's Python (just test-unit, CI unit job).
+# Sources are the CI scripts plus the Python shipped under files/ (e.g.
+# files/homebrew-image/compose-profile.py); the tests load most of them by
+# path with importlib exec_module, so the file paths, not importable module
+# names, drive the source list.
+[run]
+source =
+    scripts
+    .github/scripts
+    files
+branch = true
+# Python launched via subprocess (sys.executable, script.py) is measured only
+# when COVERAGE_PROCESS_START points at this file; nothing sets it today, so
+# those runs are not measured. See docs/skills/ci-tooling.md, "Python lint".
+[report]
+skip_covered = true
+show_missing = true
+exclude_also =
+    ^\s*if __name__ == ['"]__main__['"]:?$

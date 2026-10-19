@@ -96,6 +96,7 @@ def test_component_index_is_the_planned_set_in_order() -> None:
     assert dirs == [row[0] for row in EXPECTED], "every component directory is in the index and vice versa"
 
 
+@pytest.mark.slow
 def test_component_directories_hold_only_ordered_manifests() -> None:
     for comp in MANIFESTS.iterdir():
         if not comp.is_dir():

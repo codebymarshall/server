@@ -84,6 +84,14 @@ the pinned tools into a virtualenv with
 `python3 -m pip install -r .github/requirements-ci.txt`, run
 `just lint-python`, and let `python3 -m ruff check --fix` apply the safe fixes.
 
+The pytest half of `just test-unit` runs in parallel (`-n auto`, pytest-xdist)
+and measures coverage of the repo's Python (`.coveragerc`: `scripts/`,
+`.github/scripts/`, `files/`) into `term-missing:skip-covered`; the `unit`
+job appends the same report as markdown to the step summary — report only, no
+threshold. importlib-by-path loads are measured; a separate `python3`
+subprocess is not. `pytest -m "not slow"` skips the `@pytest.mark.slow` tests
+(registered in `pytest.ini`).
+
 ### Workflow linting
 
 `lint-actions.yml` runs actionlint and zizmor on every pull request and push
@@ -461,8 +469,7 @@ version) and the NVIDIA Container Toolkit (Go); the driver sysext adds about
   done, since the action is fixed but the binary it installs is not.
 - A `paths:` filter on a workflow meant to be a required check: it never
   reports on the pull requests it skips, so they stay pending.
-- `pip install <package>` in a workflow instead of the pinned requirements
-  file.
+- `pip install <package>` in a workflow instead of the pinned requirements file.
 - `sudo podman` in one step and plain `podman` in another step doing the same
   operation.
 - A new action not present in any sibling repo — check upstream first.
@@ -487,13 +494,7 @@ version) and the NVIDIA Container Toolkit (Go); the driver sysext adds about
       workflow; `tests/unit/test_release_workflow.py` keeps `release` and
       `release-dry-run` on the same commands and the same `setup-oras` pin.
 - [ ] The signing secret names (`BOOT_KEYS_TARBALL`, `SYSUPDATE_SIGNING_KEY`)
-      match the ones documented in
-      `docs/skills/systemd-sysupdate-verification.md`.
+      match `docs/skills/systemd-sysupdate-verification.md`.
 - [ ] A job that reads a secret names its main-only environment
       ([Environments and secrets](#environments-and-secrets)).
 - [ ] Every `actions/checkout` sets `persist-credentials: false`.
-
-## See also
-
-- [systemd-sysupdate-verification.md](systemd-sysupdate-verification.md) — release signing and sysupdate verification.
-- [CONTEXT.md](../../CONTEXT.md) — canonical project domain glossary.

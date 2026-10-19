@@ -74,12 +74,14 @@ validate: gen-dev-keys
     python3 .github/scripts/check-renovate-series.py
     just bst show --deps all oci/bluefin-server-image.bst oci/k0s-sysext.bst oci/zfs-sysext.bst oci/kubeadm-sysext.bst oci/homelab-sysext.bst oci/argo-workflows-sysext.bst oci/mcp-sysext.bst oci/kubestellar-sysext.bst oci/nvidia-open-595-sysext.bst oci/nvidia-container-toolkit-sysext.bst homebrew/image.bst runtimes/podman-sysext.bst runtimes/docker-sysext.bst
 
-# Run the unit test suite (pytest + bats; bats from a container if not installed).
+# Run the unit test suite (pytest in parallel with coverage + bats; bats from
+# a container if not installed). `pytest -m "not slow"` skips the slow tests
+# (docs/skills/ci-tooling.md, "Python lint").
 [group('dev')]
 test-unit:
     #!/usr/bin/env bash
     set -euo pipefail
-    python3 -m pytest tests/unit -q
+    python3 -m pytest -n auto --cov --cov-report=term-missing:skip-covered
     if command -v bats >/dev/null 2>&1; then
         exec bats tests/unit
     fi

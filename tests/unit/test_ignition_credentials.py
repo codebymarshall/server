@@ -324,6 +324,7 @@ def test_an_unsigned_config_is_staged_verbatim_with_the_opt_out(tmp_path: Path, 
 
 
 @needs_tools
+@pytest.mark.slow
 @pytest.mark.parametrize("failure", [500, "drop"])
 def test_a_signature_that_cannot_be_fetched_is_not_a_missing_one(tmp_path: Path, origin, keys, failure) -> None:
     url, srv, fail = origin

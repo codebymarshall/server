@@ -88,6 +88,7 @@ def test_addon_ids_do_not_collide_with_base_components() -> None:
     assert len(set(ids)) == len(ids) and not base & set(ids)
 
 
+@pytest.mark.slow
 def test_addon_directories_hold_only_ordered_manifests() -> None:
     for directory in ALL:
         names = sorted(p.name for p in (ADDONS / directory).iterdir())

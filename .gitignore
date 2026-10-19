@@ -11,6 +11,10 @@ dist/
 .build-out
 .worktrees/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 # Local Secure Boot / module signing keys (just gen-dev-keys)
 files/boot-keys/
 # CAS client credentials, while scripts/kernel-cache.sh seeds the cache

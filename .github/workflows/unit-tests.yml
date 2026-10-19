@@ -56,6 +56,10 @@ jobs:
       - name: Run unit tests
         run: just test-unit
 
+      # The coverage step summary is report-only; no fail-under threshold.
+      - name: Python coverage summary
+        run: python -m coverage report --format=markdown >> "${GITHUB_STEP_SUMMARY}"
+
   # The Go modules the image builds. Their element runs `go vet` and
   # `go test` inside the image build, so a failing or flaky test would
   # otherwise surface only on main, as a failed release. -race is extra here:
