@@ -2,9 +2,9 @@
 
 - The matrix runs exactly the script's buckets, and each scenario runs in
   one bucket only.
-- Scenarios that read the image-update artifact (the next/broken sets and
-  the Ignition signatures) run only outside releases, and only in buckets
-  whose job downloads that artifact.
+- Scenarios that read the next/broken sets or the Ignition signatures run
+  only outside releases, and each of those directories is downloaded
+  exactly by the buckets whose scenarios read it.
 - A bucket stops at its first failing scenario, so the uploaded logs are
   that scenario's, and names it in an error annotation.
 - A bucket run reports its wall time, passed or failed, as a notice and a
@@ -30,6 +30,8 @@ JOBS = yaml.safe_load(BUILD_YML)["jobs"]
 JOB = JOBS["boot-test"]
 BASH = shutil.which("bash") or "/bin/bash"
 UPDATE_PATHS = re.compile(r"\bdist/(diskless-next|diskless-broken|ignition-sigs)\b")
+# The boot-test matrix key that downloads each update-test directory.
+UPDATE_DOWNLOADS = {"next": "dist/diskless-next", "broken": "dist/diskless-broken", "sigs": "dist/ignition-sigs"}
 
 
 def script(*args: str, release: bool = False, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -87,13 +89,17 @@ def test_each_scenario_runs_once_and_its_fixtures_exist(release: bool) -> None:
 
 
 def test_update_sets_are_read_only_where_they_are_downloaded() -> None:
-    download = next(s for s in JOB["steps"] if s.get("with", {}).get("name") == "image-update")
-    skipped = set(re.findall(r"matrix\.scenario != '([\w-]+)'", download["if"]))
-    assert "needs.changes.outputs.release != 'true'" in download["if"]
+    include = {entry["scenario"]: entry for entry in JOB["strategy"]["matrix"]["include"]}
+    assert sorted(include) == sorted(buckets())
+    downloads = {s["with"]["path"]: s for s in JOB["steps"] if s.get("uses", "").startswith("actions/download-artifact@")}
+    for key, path in UPDATE_DOWNLOADS.items():
+        assert "needs.changes.outputs.release != 'true'" in downloads[path]["if"], path
+        assert f"matrix.{key}" in downloads[path]["if"], path
     for bucket in buckets():
         assert not any(UPDATE_PATHS.search(" ".join(w)) for _, w in scenarios(bucket, release=True)), bucket
-        uses_update = any(UPDATE_PATHS.search(" ".join(w)) for _, w in scenarios(bucket, release=False))
-        assert uses_update == (bucket not in skipped), bucket
+        words = " ".join(" ".join(w) for _, w in scenarios(bucket, release=False))
+        for key, path in UPDATE_DOWNLOADS.items():
+            assert bool(include[bucket][key]) == bool(re.search(rf"\b{path}\b", words)), (bucket, path)
 
 
 def fake_bash(tmp_path: Path, fail_on: str) -> dict[str, str]:

@@ -11,8 +11,9 @@
 #
 # RELEASE=true selects the release scenarios: a release build exports no
 # next/broken sets or Ignition signatures, so the update and signed-config
-# scenarios run only outside releases. Expects the image set in dist/diskless
-# and, outside releases, the image-update artifact in dist/.
+# scenarios run only outside releases. Expects in dist/ the parts of the
+# image sets its bucket's scenarios read; build.yml's boot-test matrix lists
+# which artifacts each bucket downloads.
 set -euo pipefail
 
 buckets=(diskless install installer installer-disks)

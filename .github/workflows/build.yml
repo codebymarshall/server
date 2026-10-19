@@ -377,12 +377,66 @@ jobs:
         run: just export-image
 
       # The image set carries its own signed SHA256SUMS(.gpg) covering the
-      # OS images, UKIs and the k0s/KubeStellar/OpenZFS sysexts.
-      - name: Upload image artifacts
+      # OS images, UKIs and the k0s/KubeStellar/OpenZFS sysexts. It is
+      # uploaded in parts, so each boot-test bucket downloads only what its
+      # scripts read; image-check, release and release-dry-run merge every
+      # image-set-* part back into dist/diskless/. image-set-core is the
+      # catch-all: it excludes exactly what the other parts include, so a new
+      # file always lands in some part.
+      - name: Upload the image set (core)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: image
-          path: dist/diskless/
+          name: image-set-core
+          path: |
+            dist/diskless/
+            !dist/diskless/bluefin-server_*.raw
+            !dist/diskless/bluefin-server-netboot_*
+            !dist/diskless/bluefin-server-installer_*.raw
+            !dist/diskless/*.usr.raw
+            !dist/diskless/*.usr-verity.raw
+            !dist/diskless/bluefin-server-[0-9]*.efi
+            !dist/diskless/*.raw.zst
+          if-no-files-found: error
+          retention-days: 1
+
+      # What dogfood-diskless.sh boots: the OS DDI and the netboot UKI and ESP.
+      - name: Upload the image set (netboot)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-set-netboot
+          path: |
+            dist/diskless/bluefin-server_*.raw
+            dist/diskless/bluefin-server-netboot_*
+            !dist/diskless/*.usr.raw
+            !dist/diskless/*.usr-verity.raw
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload the image set (installer)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-set-installer
+          path: dist/diskless/bluefin-server-installer_*.raw
+          if-no-files-found: error
+          retention-days: 1
+
+      # The OS's sysupdate sources: usr and verity slots, disk UKI.
+      - name: Upload the image set (sysupdate)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-set-sysupdate
+          path: |
+            dist/diskless/*.usr.raw
+            dist/diskless/*.usr-verity.raw
+            dist/diskless/bluefin-server-[0-9]*.efi
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload the image set (sysexts)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-set-sysexts
+          path: dist/diskless/*.raw.zst
           if-no-files-found: error
           retention-days: 1
 
@@ -407,16 +461,55 @@ jobs:
           just set-version "1.${GITHUB_RUN_NUMBER}.2"
           just export-image dist/diskless-broken
 
-      - name: Upload update test image sets
+      # The update tests never boot an installer, so those sets go without
+      # it. The next set is split like the image set: the diskless bucket
+      # boots only its netboot files (image-next-boot, the catch-all), the
+      # update tests also need its sysupdate sources (image-next-update).
+      - name: Upload the next image set (boot)
         if: needs.changes.outputs.release != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: image-update
+          name: image-next-boot
           path: |
             dist/diskless-next/
+            !dist/diskless-next/bluefin-server-installer_*.raw
+            !dist/diskless-next/*.usr.raw
+            !dist/diskless-next/*.usr-verity.raw
+            !dist/diskless-next/bluefin-server-[0-9]*.efi
+            !dist/diskless-next/*.raw.zst
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload the next image set (update)
+        if: needs.changes.outputs.release != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-next-update
+          path: |
+            dist/diskless-next/*.usr.raw
+            dist/diskless-next/*.usr-verity.raw
+            dist/diskless-next/bluefin-server-[0-9]*.efi
+            dist/diskless-next/*.raw.zst
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload the broken image set
+        if: needs.changes.outputs.release != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-broken
+          path: |
             dist/diskless-broken/
-            dist/ignition-sigs/
-            !dist/*/bluefin-server-installer_*.raw
+            !dist/diskless-broken/bluefin-server-installer_*.raw
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload the Ignition test config signatures
+        if: needs.changes.outputs.release != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ignition-sigs
+          path: dist/ignition-sigs/
           if-no-files-found: error
           retention-days: 1
 
@@ -440,6 +533,33 @@ jobs:
       fail-fast: false
       matrix:
         scenario: [diskless, install, installer, installer-disks]
+        # What each bucket's scenarios read, so it downloads only that:
+        # `image` the image-set parts for dist/diskless (dogfood-diskless.sh
+        # and dogfood-install.sh boot netboot, dogfood-installer.sh the
+        # installer); outside releases `next` the image-next parts for
+        # dist/diskless-next, `broken` dist/diskless-broken and `sigs`
+        # dist/ignition-sigs.
+        include:
+          - scenario: diskless
+            image: image-set-{core,netboot}
+            next: image-next-boot
+            broken: false
+            sigs: true
+          - scenario: install
+            image: image-set-{core,netboot}
+            next: image-next-*
+            broken: true
+            sigs: false
+          - scenario: installer
+            image: image-set-{core,installer}
+            next: image-next-*
+            broken: false
+            sigs: false
+          - scenario: installer-disks
+            image: image-set-{core,installer}
+            next: ""
+            broken: false
+            sigs: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -453,17 +573,31 @@ jobs:
       - name: Download image artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: image
+          pattern: ${{ matrix.image }}
+          merge-multiple: true
           path: dist/diskless
 
-      # The next/broken sets and the Ignition signatures; installer-disks
-      # boots only dist/diskless.
-      - name: Download update test image sets
-        if: needs.changes.outputs.release != 'true' && matrix.scenario != 'installer-disks'
+      - name: Download the next image set
+        if: needs.changes.outputs.release != 'true' && matrix.next != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: image-update
-          path: dist
+          pattern: ${{ matrix.next }}
+          merge-multiple: true
+          path: dist/diskless-next
+
+      - name: Download the broken image set
+        if: needs.changes.outputs.release != 'true' && matrix.broken
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: image-broken
+          path: dist/diskless-broken
+
+      - name: Download the Ignition test config signatures
+        if: needs.changes.outputs.release != 'true' && matrix.sigs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ignition-sigs
+          path: dist/ignition-sigs
 
       - name: Install QEMU and OVMF
         run: bash scripts/ci/install-qemu-ovmf.sh
@@ -525,10 +659,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           persist-credentials: false
 
+      # Every part of the image set, merged back into the set as built.
       - name: Download image artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: image
+          pattern: image-set-*
+          merge-multiple: true
           path: dist/diskless
 
       - name: Install tools
@@ -610,10 +746,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Every part of the image set, merged back into the set as built.
       - name: Download image artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: image
+          pattern: image-set-*
+          merge-multiple: true
           path: dist/diskless
 
       - name: Download the size report
@@ -722,10 +860,12 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           persist-credentials: false
 
+      # Every part of the image set, merged back into the set as built.
       - name: Download image artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: image
+          pattern: image-set-*
+          merge-multiple: true
           path: dist/diskless
 
       # Only image-check's success uploads it; the rehearsal runs either way.
