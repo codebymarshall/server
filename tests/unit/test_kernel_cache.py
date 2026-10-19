@@ -26,7 +26,10 @@ SCRIPT = ROOT / "scripts" / "kernel-cache.sh"
 # would read it from /src (the checkout).
 JUST = """#!/bin/sh
 case "$*" in
-  *"--deps all"*) printf '%s\\n' $GRAPH ;;
+  *"--deps all"*)
+    printf '%s\\n' $GRAPH
+    i=0; while [ "$i" -lt "${GRAPH_TAIL:-0}" ]; do echo "freedesktop-sdk.bst:components/filler-$i.bst"; i=$((i + 1)); done
+    exit "${GRAPH_STATUS:-0}" ;;
   "bst artifact show"*) printf '%s\\n' "$STATES"; [ -z "$UNREACHABLE" ] || echo "$UNREACHABLE" >&2 ;;
   "bst build"*)
     echo "$*" >> "$LOG/built"
@@ -91,6 +94,27 @@ def test_seed_refuses_a_graph_that_reaches_the_keys(checkout: Path, env: dict[st
     result = run(checkout, env)
     assert result.returncode != 0
     assert "refusing to publish" in result.stderr
+    assert not (Path(env["LOG"]) / "built").exists()
+    assert not leftovers(checkout)
+
+
+def test_seed_refuses_the_keys_early_in_a_long_graph(checkout: Path, env: dict[str, str]) -> None:
+    # grep -q stops reading at the match; the rest of the listing must not
+    # turn that match into a pass.
+    env["GRAPH"] = "bluefin-server/keys/boot-keys.bst"
+    env["GRAPH_TAIL"] = "20000"
+    result = run(checkout, env)
+    assert result.returncode != 0
+    assert "refusing to publish" in result.stderr
+    assert not (Path(env["LOG"]) / "built").exists()
+    assert not leftovers(checkout)
+
+
+def test_seed_refuses_when_the_graph_cannot_be_listed(checkout: Path, env: dict[str, str]) -> None:
+    env["GRAPH_STATUS"] = "1"
+    result = run(checkout, env)
+    assert result.returncode != 0
+    assert "cannot list the graph" in result.stderr
     assert not (Path(env["LOG"]) / "built").exists()
     assert not leftovers(checkout)
 
