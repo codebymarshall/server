@@ -795,7 +795,7 @@ jobs:
         run: bash scripts/publish-release.sh release dist/diskless "${VERSION}"
 
       # setup-oras v2.0.1's built-in release table stops at ORAS 1.3.3, so pin
-      # 1.3.4 (matching the Justfile's oras_image) by URL and checksum.
+      # the release the Justfile's oras_image names, by URL and checksum.
       - name: Set up oras
         if: steps.taggable.outputs.publish == 'true'
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
@@ -887,7 +887,7 @@ jobs:
         run: bash scripts/publish-release.sh release dist/diskless "${VERSION}" --dry-run
 
       # setup-oras v2.0.1's built-in release table stops at ORAS 1.3.3, so pin
-      # 1.3.4 (matching the Justfile's oras_image) by URL and checksum.
+      # the release the Justfile's oras_image names, by URL and checksum.
       - name: Set up oras
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
