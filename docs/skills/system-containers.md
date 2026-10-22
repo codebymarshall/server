@@ -113,7 +113,7 @@ silent UID/GID change. Only the owner runs `brew`; other provisioned users execu
 installed tools with a read-only prefix. User scopes keep detached tmux sessions
 alive after SSH disconnects, without nesting host engine workloads in the machine.
 After login readiness, `bluefin-homebrew-default-formulae.service` (in
-`home-server.bu` only) runs `brew install byobu neovim` as the owner through the
+`home-server.bu` only) runs `brew install tmux neovim` as the owner through the
 same dispatch. Login never waits for it; a failed run (no network) retries next
 boot. The `/var/lib/bluefin-homebrew/default-formulae` stamp keeps it from running
 again, so formulae the owner removes stay removed.

@@ -45,7 +45,7 @@ systemd:
         ConditionPathExists=!/var/lib/bluefin-homebrew/default-formulae
         [Service]
         Type=oneshot
-        ExecStart=/usr/bin/bash -c 'IFS=: read -r uid gid </var/lib/bluefin-homebrew/owner && exec setpriv --reuid="$$uid" --regid="$$gid" --init-groups -- /usr/bin/brew install byobu neovim'
+        ExecStart=/usr/bin/bash -c 'IFS=: read -r uid gid </var/lib/bluefin-homebrew/owner && exec setpriv --reuid="$$uid" --regid="$$gid" --init-groups -- /usr/bin/brew install tmux neovim'
         ExecStartPost=/usr/bin/touch /var/lib/bluefin-homebrew/default-formulae
         TimeoutStartSec=30min
         [Install]

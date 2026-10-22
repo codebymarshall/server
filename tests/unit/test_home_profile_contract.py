@@ -130,4 +130,4 @@ def test_default_formulae_install_once_as_owner_through_brew(tmp_path: Path, pro
     script = script.replace("/var/lib/bluefin-homebrew/owner", str(tmp_path / "owner"))
     result = subprocess.run([shell, flag, script], env=os.environ | {"PATH": f"{bin_dir}:/usr/bin:/bin"},
                             text=True, capture_output=True, check=True)
-    assert result.stdout == "--reuid=1000 --regid=1001 --init-groups -- /usr/bin/brew install byobu neovim\n"
+    assert result.stdout == "--reuid=1000 --regid=1001 --init-groups -- /usr/bin/brew install tmux neovim\n"
