@@ -1,12 +1,10 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/projectbluefin/artwork/main/assets/vector/logos/bluefin-server/bluefin-server-logo-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/projectbluefin/artwork/main/assets/vector/logos/bluefin-server/bluefin-server-logo-light.svg">
-  <img alt="Bluefin Server" src="https://raw.githubusercontent.com/projectbluefin/artwork/main/assets/vector/logos/bluefin-server/bluefin-server-logo-light.svg" width="400">
 </picture>
 
 > Amargasaurus cazaui
-
-**An image-based Linux server OS built like a container, composed from freedesktop-sdk.**
+>
+> An image-based Linux server OS built like a container, composed from freedesktop-sdk.
 
 Bluefin Server targets the same workload space as Flatcar Container Linux, Fedora CoreOS, and Talos. Built with [BuildStream 2](https://buildstream.build/), its userspace, kernel, and boot chain compose from [freedesktop-sdk](https://freedesktop-sdk.freedesktop.org/) (FSDK 26.08, systemd v261) components. No other distribution binaries ship in the base image; third-party userspace extensions (such as Flatcar System Extension Bakery images) require `systemd-sysext merge --force` per [systemd-sysext-extensions.md](docs/skills/systemd-sysext-extensions.md).
 
@@ -25,13 +23,34 @@ Bluefin Server is currently in **Alpha**:
 
 ## Architecture
 
-- **Diskless boot** — Netboot UKI pulls `bluefin-server_<ver>.raw` into RAM with `rd.systemd.pull` (`verify=signature`), mounts a dm-verity erofs `/usr`, and runs from tmpfs. Nodes update by rebooting into a newer image, flagging `/run/reboot-required` when an updated image is offered.
+- **Diskless boot** — Netboot UKI pulls `bluefin-server_<ver>.raw` into RAM with `rd.systemd.pull` (`verify=signature`), mounts a dm-verity erofs `/usr`, and runs from tmpfs. Nodes update by rebooting into a newer image, flagging `/run/reboot-required` when an updated image is offered. This is the recommended configuration for Kubernetes worker nodes.
 - **Optional disk install with A/B rollback** — A running diskless node installs itself via [ddi-installer.md](docs/skills/ddi-installer.md) (`systemd-sysinstall` copies `/usr` into slot A). First disk boot creates slot B and an xfs root. `systemd-sysupdate` fills the inactive slot and reboots nightly (Kubernetes nodes defer reboots to kured); UKI boot counting automatically rolls back failed boots. Updates can be held via `/run/reboot-lock` or `/etc/reboot-lock`.
+  - This is the recommended mode for Kubernetes Control Planes, and Home Servers.
 - **Secure Boot by default** — Signed boot chain with `lockdown=integrity`. [Booty](https://github.com/jeefy/booty) serves UEFI HTTP boot assets and per-node Ignition configs.
 - **Declarative provisioning** — Pass an `ignition.config` credential (or `bluefin-node.ign` next to the UKI); Ignition runs in the initrd on every boot. Configs must be idempotent.
 - **Opt-in sysexts** — k0s, kubeadm, homelab automation, OpenZFS, and NVIDIA drivers/CDI ship as separate `systemd-sysext` images outside the base `/usr`.
 
 > **Remote diagnostics:** OpenSSH is installed for diagnostics but disabled by default via presets. Start manually with `systemctl start sshd` when access is required. See [`docs/skills/factory-integration.md`](docs/skills/factory-integration.md).
+
+## Installation Profiles
+
+Choose your profile during installation. Start small and build up or go full lazy mode ootb. 
+
+### Core and Kubernetes Profiles
+
+| Boot Menu Option | Best For | Included Software | First Boot Login |
+|---|---|---|---|
+| **Bluefin Server** *(Default)* | Minimal servers and automated deployments | Base OS only (read-only system root, systemd, SSH). No container engines or Kubernetes. | Prompts on the local console (tty1) to set the root password. |
+| **Homelab: Control Plane** | Primary node for a multi-machine Kubernetes cluster | Base OS + kubeadm, containerd, Argo Workflows, and a KubeStellar dashboard | Prompts on tty1 for a root password. Prints the cluster join passphrase on the screen. |
+| **Homelab: Node** | Worker nodes joining an existing Homelab cluster | Base OS + kubeadm, containerd, and auto-join service. | Prompts for the cluster join passphrase during install; prompts on tty1 for a root password on first boot. |
+
+### Home Server Profile
+
+This is lazy mode, which includes `brew` for that lazy Ubuntu Server vibe. This mode is great for the home to run everything, or if you just need a box/VM that needs an OS to run one thing. Having brew baked in makes this perfect for VMs/machines to hold your agents/tmux, etc. 
+
+| Boot Menu Option | Best For | Included Software | First Boot Login |
+|---|---|---|---|
+| **Bluefin Home Server** | Standalone personal server running containers and tools | Base OS + Podman (default) + Homebrew inside an isolated nspawn system container. Root stays locked. | Prompts on the local console to create a regular user account and password (or accepts an SSH key via credential). |
 
 ## Downloads
 
