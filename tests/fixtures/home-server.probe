@@ -22,6 +22,9 @@ if [ ! -f /var/lib/bluefin-homebrew/dogfood-packages ]; then
     touch /var/lib/bluefin-homebrew/dogfood-packages
 fi
 home_ssh 'brew list --versions tmux docker podman && tmux -V' || home_fail 'installed tools missing after boot'
+# The profile's boot-time oneshot installs these through the real dispatch path.
+systemctl start bluefin-homebrew-default-formulae.service || home_fail 'default formulae unit'
+home_ssh 'brew list --versions byobu neovim && nvim --version' || home_fail 'default formulae missing'
 # Detached tmux's guest scope must outlive the host SSH session that created it.
 timeout 60 ssh -tt "${ssh_args[@]}" "$owner@.host" 'tmux new-session -d -s bluefin-dogfood "sleep 300"' </dev/null || home_fail 'PTY tmux start'
 home_ssh 'tmux has-session -t bluefin-dogfood && tmux kill-session -t bluefin-dogfood' || home_fail 'tmux lost after disconnect'

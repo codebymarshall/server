@@ -31,6 +31,25 @@ systemd:
         TimeoutStartSec=infinity
         [Install]
         WantedBy=multi-user.target
+    # Default owner tools, installed once through the owner's normal brew
+    # dispatch. Login never waits for it; a failure (no network) leaves the unit
+    # failed and retries next boot. The stamp keeps an owner's removal final.
+    - name: bluefin-homebrew-default-formulae.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Install default Homebrew formulae for the owner once
+        Requires=bluefin-homebrew-session-ready.service
+        Wants=network-online.target
+        After=bluefin-homebrew-session-ready.service network-online.target
+        ConditionPathExists=!/var/lib/bluefin-homebrew/default-formulae
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/bin/bash -c 'IFS=: read -r uid gid </var/lib/bluefin-homebrew/owner && exec setpriv --reuid="$$uid" --regid="$$gid" --init-groups -- /usr/bin/brew install byobu neovim'
+        ExecStartPost=/usr/bin/touch /var/lib/bluefin-homebrew/default-formulae
+        TimeoutStartSec=30min
+        [Install]
+        WantedBy=multi-user.target
     - name: getty@tty1.service
       dropins:
         - name: 50-homebrew-ready.conf

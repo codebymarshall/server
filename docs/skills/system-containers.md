@@ -4,7 +4,7 @@ description: Add or document system containers that should behave like first-cla
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-10-16"
+  last_updated: "2026-10-22"
   context7-sources:
     - /systemd/systemd
 ---
@@ -112,6 +112,11 @@ machine at `/home/linuxbrew/.linuxbrew`. The root-owned owner record prevents a
 silent UID/GID change. Only the owner runs `brew`; other provisioned users execute
 installed tools with a read-only prefix. User scopes keep detached tmux sessions
 alive after SSH disconnects, without nesting host engine workloads in the machine.
+After login readiness, `bluefin-homebrew-default-formulae.service` (in
+`home-server.bu` only) runs `brew install byobu neovim` as the owner through the
+same dispatch. Login never waits for it; a failed run (no network) retries next
+boot. The `/var/lib/bluefin-homebrew/default-formulae` stamp keeps it from running
+again, so formulae the owner removes stay removed.
 
 Dispatch preserves sudo's authenticated active primary GID, NSS supplementary
 groups and inherited descriptors. Shared cwd identity is pinned and compared in
