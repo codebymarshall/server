@@ -16,6 +16,9 @@ chown "$owner:$(id -gn "$owner")" "$home/.ssh/authorized_keys"
 chmod 0600 "$home/.ssh/authorized_keys"
 ssh_args=(-i /run/dogfood-home-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes)
 home_ssh() { timeout 600 ssh "${ssh_args[@]}" "$owner@.host" "$@"; }
+# The profile's boot-time oneshot installs these through the real dispatch path.
+systemctl start bluefin-homebrew-default-formulae.service || home_fail 'default formulae unit'
+home_ssh 'brew list --versions tmux neovim && nvim --version' || home_fail 'default formulae missing'
 # Literal dollar, whitespace, and exit status must cross a real SSH/dispatch path.
 if [ ! -f /var/lib/bluefin-homebrew/dogfood-packages ]; then
     home_ssh 'brew config && brew install tmux docker podman && brew update' || home_fail 'package install/update'
