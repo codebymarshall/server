@@ -1,0 +1,4 @@
+# Single source of truth for the nspawn.org version axis.
+variables:
+  nspawn-org-version: "2.3.0"
+  nspawn-org-x86-64-sha256: "be5e92b09c667a473d0d7e69b5fabf43f97d36bd352e6acc9e91019d6c0846d8"

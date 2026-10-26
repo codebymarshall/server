@@ -51,6 +51,7 @@ jobs:
         homebrew/templates.bst
         runtimes/podman-sysext.bst
         runtimes/docker-sysext.bst
+        oci/nspawn-org-sysext.bst
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

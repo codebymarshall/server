@@ -50,6 +50,7 @@ def release_files(version: str) -> list[str]:
         f"homebrew-integration_{version}.raw.zst",
         f"podman_{version}.raw.zst",
         f"docker_{version}.raw.zst",
+        f"nspawn-org_{version}.raw.zst",
         "home-server.bu",
         "home-server-cluster.bu",
         f"nvidia-open-595_{version}.raw.zst",

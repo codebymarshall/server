@@ -106,6 +106,13 @@ storage:
         inline: |
           [Feature]
           Enabled=true
+    - path: /etc/sysupdate.d/nspawn-org.feature.d/50-home-server.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Feature]
+          Enabled=true
     - path: /etc/bluefin-homebrew/bootstrap/bluefin-oci-features
       mode: 0755
       overwrite: true

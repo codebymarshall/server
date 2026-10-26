@@ -128,6 +128,9 @@ build-depends:
 - filename: runtimes/docker-sysext.bst
   config:
     location: /sysext/docker
+- filename: oci/nspawn-org-sysext.bst
+  config:
+    location: /sysext/nspawn-org
 
 variables:
   image-name: bluefin-server_%{image-version}
@@ -275,7 +278,8 @@ config:
       /homebrew-machine/homebrew_%{image-version}.raw.zst \
       /sysext/homebrew-integration/homebrew-integration_%{image-version}.raw.zst \
       /sysext/podman/podman_%{image-version}.raw.zst \
-      /sysext/docker/docker_%{image-version}.raw.zst
+      /sysext/docker/docker_%{image-version}.raw.zst \
+      /sysext/nspawn-org/nspawn-org_%{image-version}.raw.zst
     (cd "${extensions}" && sha256sum --binary *.raw.zst > SHA256SUMS)
     # FAT metadata/slack plus room for both installed UKIs and updates.
     payload="$(du -sb "${extensions}")"
@@ -321,7 +325,8 @@ config:
     cp /homebrew-machine/homebrew_%{image-version}.raw.zst \
        /sysext/homebrew-integration/homebrew-integration_%{image-version}.raw.zst \
        /sysext/podman/podman_%{image-version}.raw.zst \
-       /sysext/docker/docker_%{image-version}.raw.zst "%{install-root}/"
+       /sysext/docker/docker_%{image-version}.raw.zst \
+       /sysext/nspawn-org/nspawn-org_%{image-version}.raw.zst "%{install-root}/"
     install -m644 -t "%{install-root}" /homebrew-templates/home-server*.bu
 
   - |
