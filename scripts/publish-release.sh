@@ -119,6 +119,7 @@ expected_patterns() {
         "podman_${v}\\.raw\\.zst" \
         "docker_${v}\\.raw\\.zst" \
         "nspawn-org_${v}\\.raw\\.zst" \
+        "tailscale_${v}\\.raw\\.zst" \
         "nvidia-open-595_${v}\\.raw\\.zst" \
         "k0s-[0-9][0-9A-Za-z.+-]*\\.raw\\.zst" \
         "nvidia-container-toolkit-[0-9][0-9A-Za-z.+-]*\\.raw\\.zst"

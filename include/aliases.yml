@@ -9,3 +9,4 @@ aliases:
   sourceforge_download: https://downloads.sourceforge.net/
   kernel_pub: https://www.kernel.org/pub/
   nvidia_download: https://download.nvidia.com/
+  tailscale_pkgs: https://pkgs.tailscale.com/stable/

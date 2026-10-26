@@ -59,6 +59,8 @@ build-depends:
 - runtimes/docker-bin.bst
 - oci/nspawn-org-sysext.bst
 - runtimes/nspawn-org-bin.bst
+- oci/tailscale-sysext.bst
+- runtimes/tailscale-bin.bst
 
 config:
   path: /bluefin-server.spdx.json

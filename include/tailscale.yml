@@ -1,0 +1,5 @@
+# Single source of truth for the Tailscale version axis.
+variables:
+  tailscale-version: "1.104.2"
+  tailscale-x86-64-sha256: "512f613ed7d04fc7282f7dc5bd76aa105aae28168fbb9357eb749ebcbc29f0ae"
+  tailscale-arm64-sha256: "5776aaa901b5ef1916e66be5bb54b9f481cd399c9c28db123a8cab620efa237b"
