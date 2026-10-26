@@ -57,6 +57,8 @@ build-depends:
 - runtimes/podman-runtime.bst
 - runtimes/docker-sysext.bst
 - runtimes/docker-bin.bst
+- oci/nspawn-org-sysext.bst
+- runtimes/nspawn-org-bin.bst
 
 config:
   path: /bluefin-server.spdx.json

@@ -135,6 +135,18 @@ To run a command inside a running machine:
 systemd-run --machine=homebrew --pty /usr/bin/env
 ```
 
+## nspawn.org CLI
+
+The optional `nspawn-org` sysext provides the upstream `nspawn` CLI (nspawn.org)
+for Docker-like workflow on top of systemd-nspawn. It is enabled by default in
+the `home-server` profile via `/etc/sysupdate.d/nspawn-org.feature.d/50-home-server.conf`
+and updated OTA via `43-nspawn-org.transfer`. On other profiles, operators enable
+it with:
+
+```bash
+sudo updatectl enable nspawn-org
+```
+
 ## Verification
 
 - [ ] `files/bin/system-container` exists and maps to valid `machinectl` commands.
