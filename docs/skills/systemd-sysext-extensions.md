@@ -127,6 +127,12 @@ then `systemctl --user enable --now bluefin-podman.socket` or
 `$XDG_RUNTIME_DIR/bluefin-podman/api.sock` and
 `$XDG_RUNTIME_DIR/bluefin-docker/api.sock`; no client or engine enters base `/usr`.
 
+The optional **Tailscale** system extension (`oci/tailscale-sysext.bst`,
+`tailscale_<image-version>.raw`, sysupdate feature `tailscale`) provides the
+upstream Tailscale VPN daemon and CLI tool. Units are opt-in and disabled by
+`80-tailscale.preset`; an operator or Ignition profile enables `tailscaled.service`
+once merged.
+
 The **homelab** sysext (`oci/homelab-sysext.bst`, `homelab_<image-version>.raw`,
 sysupdate feature `homelab`) is version-locked the same way and carries no
 binaries: the default homelab component set as plain YAML under

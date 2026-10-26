@@ -337,6 +337,22 @@ export-nvidia-container-toolkit-sysext: build-nvidia-container-toolkit-sysext
     rm -rf dist/nvidia-ctk-checkout
     @echo "==> wrote nvidia-container-toolkit sysext:" && ls -lh dist/sysext/
 
+# Build the Tailscale systemd-sysext (locked to one image version).
+[group('sysext')]
+build-tailscale-sysext:
+    just bst build oci/tailscale-sysext.bst
+
+# Export the Tailscale sysext + SHA256SUMS to dist/sysext/.
+[group('sysext')]
+export-tailscale-sysext: build-tailscale-sysext
+    rm -rf dist/tailscale-checkout
+    mkdir -p dist/sysext
+    just bst artifact checkout oci/tailscale-sysext.bst --directory /src/dist/tailscale-checkout
+    cp dist/tailscale-checkout/tailscale_*.raw.zst dist/sysext/
+    grep 'raw.zst$' dist/tailscale-checkout/SHA256SUMS >> dist/sysext/SHA256SUMS
+    rm -rf dist/tailscale-checkout
+    @echo "==> wrote tailscale sysext:" && ls -lh dist/sysext/
+
 # Set up KubeStellar kc-agent for the user in ONE command.
 [group('test')]
 setup-kubestellar ORIGIN="http://localhost:8080,http://127.0.0.1:8080":

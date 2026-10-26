@@ -1,0 +1,4 @@
+# Tailscale units are opt-in on Bluefin Server: disabled by default preset.
+# An operator or provisioning profile enables tailscaled.service explicitly.
+disable tailscaled.service
+disable tailscale-wait-online.service
