@@ -78,8 +78,8 @@ not a digest pin.
 `just lint-python`, which the `unit` job runs before the tests, runs ruff over
 every Python file (`ruff.toml`: the E, F, W, I, UP and B rules, each disabled
 rule with its reason) and mypy over `scripts/` and `.github/scripts/`
-(`mypy.ini`: every function there is annotated). ruff's `target-version` is
-the Python the workflows set up, 3.14; move both together. Locally, install
+(`mypy.ini`: every function there is annotated). ruff's `target-version` is the
+oldest interpreter that runs these files — today the runners' system python3, 3.14 — not the `setup-python` version the workflows install; raise it only when every caller runs that version or newer. Locally, install
 the pinned tools into a virtualenv with
 `python3 -m pip install -r .github/requirements-ci.txt`, run
 `just lint-python`, and let `python3 -m ruff check --fix` apply the safe fixes.

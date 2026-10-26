@@ -1,9 +1,10 @@
 # Lint for every Python file in the repository: `just lint-python`, run by the
 # unit-tests workflow (docs/skills/ci-tooling.md, "Python lint").
 
-# The lowest Python that runs these files: CI runs them on 3.14 only
-# (actions/setup-python, the ubuntu-26.04 runners' python3), and none of them
-# runs inside the image, which ships no Python.
+# The lowest Python that runs these files: setup-python 3.15 in the unit-tests
+# and docs-checks workflows, and the ubuntu-26.04 runners' system python3 (3.14)
+# in build.yml, the track-binaries and track-junctions workflows, and the
+# Justfile recipes. None of them runs inside the image, which ships no Python.
 target-version = "py314"
 # The tests import tests/unit/_systemd.py as a top-level module.
 src = [".", "tests/unit"]
