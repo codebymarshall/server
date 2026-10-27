@@ -536,14 +536,19 @@ ExecStart=
 ExecStart=${exec_start} ${install_args} ${target_dev}
 ExecStopPost=/bin/bash -c 'exec >/dev/ttyS1 2>&1; echo "PROBE sysinstall=\$\${SERVICE_RESULT} \$\${EXIT_STATUS}"; udevadm settle -t 10 || true; echo "PROBE installed-slot-b=\$\$(lsblk -rno PARTLABEL ${target_dev} | grep -cx _empty) installed-parts=\$\$(lsblk -rno TYPE ${target_dev} | grep -cx part)"; lsblk -o NAME,PARTLABEL,FSTYPE,SIZE ${target_dev} | sed "s/^/PROBE-LOG installed /"'
 EOF
+# The journal mirror restarts if it dies (#550): -b replays the whole boot, so
+# the asserted lines reach ttyS2 again and duplicates are harmless.
 cat > "${state}/journal.service" <<'EOF'
 [Unit]
 Description=Dogfood journal mirror on ttyS2
 DefaultDependencies=no
+StartLimitIntervalSec=0
 [Service]
 ExecStart=journalctl -b -f --no-pager -o short-monotonic
 StandardOutput=tty
 TTYPath=/dev/ttyS2
+Restart=always
+RestartSec=1
 EOF
 # Wanted by sysinit.target too: the console install has no sysinstall drop-in.
 printf '[Unit]\nWants=dogfood-journal.service\n' > "${state}/journal-wants.conf"
