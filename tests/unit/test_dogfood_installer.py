@@ -91,8 +91,6 @@ def test_without_a_serial_only_the_probe_console_ends_a_boot(tmp_path: Path) -> 
     assert f"FAIL: {args[0]}: no result within 2s" in result.stderr
 
 
-
-
 @pytest.mark.parametrize("script", ["dogfood-installer.sh", "dogfood-homelab-installer.sh"])
 def test_the_ttys2_journal_mirror_restarts_if_it_dies(script: str) -> None:
     # The assertions grep <name>.ttyS2.log; a mirror that died at 4 s of
@@ -104,3 +102,6 @@ def test_the_ttys2_journal_mirror_restarts_if_it_dies(script: str) -> None:
     assert "ExecStart=journalctl -b -f --no-pager -o short-monotonic" in lines
     assert "Restart=always" in lines
     assert "StartLimitIntervalSec=0" in lines
+    # Each exit is logged so a recurrence shows whether the mirror died.
+    stop = [line for line in lines if line.startswith("ExecStopPost=")]
+    assert stop and "PROBE-LOG journal-mirror result=$${SERVICE_RESULT}" in stop[0]

@@ -135,7 +135,8 @@ ExecStart=${exec_start} --confirm=no ${target_dev}
 ExecStopPost=/bin/bash -c 'exec >/dev/ttyS1 2>&1; echo "PROBE sysinstall=\$\${SERVICE_RESULT} \$\${EXIT_STATUS} homelab-install=\$\$(systemctl show -P Result bluefin-homelab-install.service)"; cat /run/bluefin-homelab-install/sysinstall.env | sed "s/^/PROBE-LOG env /"; udevadm settle -t 10 || true; mkdir -p /run/t; mount -o ro ${target_dev}-part1 /run/t && { echo "PROBE esp-seed=\$\$(echo \$\$(ls /run/t/bluefin/extensions)) "; echo "PROBE esp-creds=\$\$(echo \$\$(ls /run/t/*/ | grep "cred\$\$")) "; cat /run/t/loader/entries/*.conf | sed "s/^/PROBE-LOG entry /"; umount /run/t; }'
 EOF
 # The journal mirror restarts if it dies (#550): -b replays the whole boot, so
-# the asserted lines reach ttyS2 again and duplicates are harmless.
+# the asserted lines reach ttyS2 again and duplicates are harmless. Each exit
+# is logged on the probe console so a recurrence shows died vs. stalled.
 cat > "${state}/journal.service" <<'EOF'
 [Unit]
 Description=Dogfood journal mirror on ttyS2
@@ -143,6 +144,7 @@ DefaultDependencies=no
 StartLimitIntervalSec=0
 [Service]
 ExecStart=journalctl -b -f --no-pager -o short-monotonic
+ExecStopPost=/bin/bash -c 'echo "PROBE-LOG journal-mirror result=$${SERVICE_RESULT} $${EXIT_CODE} $${EXIT_STATUS}" >/dev/ttyS1'
 StandardOutput=tty
 TTYPath=/dev/ttyS2
 Restart=always
