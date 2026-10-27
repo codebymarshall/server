@@ -23,14 +23,14 @@ variables:
 sources:
   - kind: remote
     url: github:k0sproject/k0s/releases/download/%{k0s-upstream-tag}/k0s-%{k0s-upstream-tag}-amd64
-    ref: 18c304d53cdd70095e99c6b859b269b4fef0bb84579d7e7185271a9135694a31
+    ref: 377cdb372f37a3c23f1f6072e4f11838b45b463b458f2afdd0c2607157fbe04f
 
 (?):
   - arch == "aarch64":
       sources:
         - kind: remote
           url: github:k0sproject/k0s/releases/download/%{k0s-upstream-tag}/k0s-%{k0s-upstream-tag}-arm64
-          ref: 04f685c8c9c29262da64acf26fd928452f19d449ac58729592f686f915882319
+          ref: 88d730866e610fe6ad32e877bf79ed10eafd48fe14e699fff6f5133c11d598b7
 
 config:
   install-commands:
